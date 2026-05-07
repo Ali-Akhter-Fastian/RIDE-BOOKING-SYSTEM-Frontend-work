@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ROUTES } from '../../routes/routeConfig';
 import { Gauge, Bell, User, MapPin, Search, Mic, Home, Briefcase, Ticket, CreditCard, Clock, Users, X, Star, DollarSign, History } from 'lucide-react';
 import { MapView } from '../../components/map/RideMap';
 
@@ -34,6 +36,8 @@ export function RiderPortal() {
 }
 
 function Header({ screen, setScreen }: { screen: RiderScreen; setScreen: (s: RiderScreen) => void }) {
+  const navigate = useNavigate();
+
   return (
     <header className="h-16 bg-[#12151C] border-b border-[#1E2433] flex items-center justify-between px-6 z-20">
       <div className="flex items-center gap-3">
@@ -62,7 +66,7 @@ function Header({ screen, setScreen }: { screen: RiderScreen; setScreen: (s: Rid
           <Bell className="w-5 h-5 text-[#94A3B8]" />
           <span className="absolute top-1 right-1 w-2 h-2 bg-[#EF4444] rounded-full"></span>
         </button>
-        <button className="flex items-center gap-2 p-2 hover:bg-[#1A1E28] rounded-lg transition-colors">
+        <button onClick={() => navigate(ROUTES.PROFILE)} className="flex items-center gap-2 p-2 hover:bg-[#1A1E28] rounded-lg transition-colors">
           <User className="w-5 h-5 text-[#94A3B8]" />
         </button>
       </div>

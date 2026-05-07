@@ -1,27 +1,37 @@
 import { client } from './client';
 
+const AUTH_ROUTE_PREFIX = '/api/auth';
+
 export const authApi = {
-  // POST /auth/register
-  register: (data: { email?: string; phone?: string; name: string; role: string; password: string }) =>
-    client.post('/auth/register', data),
+  // POST ${AUTH_ROUTE_PREFIX}/register
+  register: (data: {
+    email: string;
+    password: string;
+    confirm_password: string;
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+    role?: string;
+  }) =>
+    client.post(`${AUTH_ROUTE_PREFIX}/register`, data),
 
-  // POST /auth/login
+  // POST ${AUTH_ROUTE_PREFIX}/login
   login: (data: { email?: string; phone?: string; password: string }) =>
-    client.post('/auth/login', data),
+    client.post(`${AUTH_ROUTE_PREFIX}/login`, data),
 
-  // POST /auth/verify-otp
+  // POST ${AUTH_ROUTE_PREFIX}/verify-otp
   verifyOtp: (data: { phone: string; otp: string }) =>
-    client.post('/auth/verify-otp', data),
+    client.post(`${AUTH_ROUTE_PREFIX}/verify-otp`, data),
 
-  // POST /auth/refresh
+  // POST ${AUTH_ROUTE_PREFIX}/refresh
   refreshToken: (refresh_token: string) =>
-    client.post('/auth/refresh', { refresh_token }),
+    client.post(`${AUTH_ROUTE_PREFIX}/refresh`, { refresh_token }),
 
-  // GET /auth/me
+  // GET ${AUTH_ROUTE_PREFIX}/me
   me: () =>
-    client.get('/auth/me'),
+    client.get(`${AUTH_ROUTE_PREFIX}/me`),
 
-  // POST /auth/logout
+  // POST ${AUTH_ROUTE_PREFIX}/logout
   logout: () =>
-    client.post('/auth/logout'),
+    client.post(`${AUTH_ROUTE_PREFIX}/logout`),
 };

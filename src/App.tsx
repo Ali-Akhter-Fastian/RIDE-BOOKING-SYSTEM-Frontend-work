@@ -1,11 +1,18 @@
 import { useState } from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { RiderPortal } from './pages/rider/RiderPortal';
 import { DriverPortal } from './pages/driver/DriverPortal';
 import { AdminPortal } from './pages/admin/AdminPortal';
+import { ProfilePage } from './pages/ProfilePage';
+import { LoginPage } from './pages/auth/LoginPage';
+import { RegisterPage } from './pages/auth/RegisterPage';
+import { VerifyOtpPage } from './pages/auth/VerifyOtpPage';
+import { useAuthContext } from './context/AuthContext';
+import { ROUTES } from './routes/routeConfig';
 
 type Portal = 'rider' | 'driver' | 'admin';
 
-export default function App() {
+function PortalShell() {
   const [activePortal, setActivePortal] = useState<Portal>('rider');
 
   return (
@@ -51,5 +58,90 @@ export default function App() {
         {activePortal === 'admin' && <AdminPortal />}
       </div>
     </div>
+  );
+}
+
+function RequireAuth({ children }: { children: JSX.Element }) {
+  const { isAuthenticated, loading } = useAuthContext();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0A0C10] text-white flex items-center justify-center">
+        <div className="text-sm text-[#94A3B8]">Loading authentication...</div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to={ROUTES.LOGIN} replace />;
+  }
+
+  return children;
+}
+
+function PublicOnly({ children }: { children: JSX.Element }) {
+  const { isAuthenticated, loading } = useAuthContext();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0A0C10] text-white flex items-center justify-center">
+        <div className="text-sm text-[#94A3B8]">Loading authentication...</div>
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to={ROUTES.APP_HOME} replace />;
+  }
+
+  return children;
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to={ROUTES.LOGIN} replace />} />
+      <Route
+        path={ROUTES.LOGIN}
+        element={(
+          <PublicOnly>
+            <LoginPage />
+          </PublicOnly>
+        )}
+      />
+      <Route
+        path={ROUTES.REGISTER}
+        element={(
+          <PublicOnly>
+            <RegisterPage />
+          </PublicOnly>
+        )}
+      />
+      <Route
+        path={ROUTES.VERIFY_OTP}
+        element={(
+          <PublicOnly>
+            <VerifyOtpPage />
+          </PublicOnly>
+        )}
+      />
+      <Route
+        path={ROUTES.APP_HOME}
+        element={(
+          <RequireAuth>
+            <PortalShell />
+          </RequireAuth>
+        )}
+      />
+      <Route
+        path={ROUTES.PROFILE}
+        element={(
+          <RequireAuth>
+            <ProfilePage />
+          </RequireAuth>
+        )}
+      />
+      <Route path="*" element={<Navigate to={ROUTES.LOGIN} replace />} />
+    </Routes>
   );
 }
