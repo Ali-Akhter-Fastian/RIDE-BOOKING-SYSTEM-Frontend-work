@@ -4,6 +4,68 @@ import { AuthLayout } from './AuthLayout';
 import { ROUTES } from '../../routes/routeConfig';
 import { authApi } from '../../api/authApi';
 
+type RegisterFieldErrors = {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  password?: string;
+  confirmPassword?: string;
+  general?: string;
+};
+
+function parseRegisterErrors(caughtError: unknown): RegisterFieldErrors {
+  const resp = (caughtError as any)?.response;
+  const fallback: RegisterFieldErrors = {
+    general: 'Registration failed. Please try again.',
+  };
+
+  if (!resp?.data) {
+    return fallback;
+  }
+
+  const detail = resp.data.detail;
+
+  if (Array.isArray(detail)) {
+    const errors: RegisterFieldErrors = {};
+
+    for (const item of detail) {
+      const message = item?.msg ?? (typeof item === 'string' ? item : undefined);
+      const location = Array.isArray(item?.loc) ? item.loc : [];
+      const field = location[location.length - 1];
+
+      if (!message) {
+        continue;
+      }
+
+      if (field === 'first_name') {
+        errors.firstName = message;
+      } else if (field === 'last_name') {
+        errors.lastName = message;
+      } else if (field === 'email') {
+        errors.email = message;
+      } else if (field === 'password') {
+        errors.password = message;
+      } else if (field === 'confirm_password') {
+        errors.confirmPassword = message;
+      } else {
+        errors.general = errors.general ?? message;
+      }
+    }
+
+    return Object.keys(errors).length > 0 ? errors : fallback;
+  }
+
+  if (typeof detail === 'string') {
+    return { general: detail };
+  }
+
+  if (typeof resp.data === 'string') {
+    return { general: resp.data };
+  }
+
+  return fallback;
+}
+
 export function RegisterPage() {
   const navigate = useNavigate();
   const [firstName, setFirstName] = useState('');
@@ -13,14 +75,18 @@ export function RegisterPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | string[] | null>(null);
+  const [errors, setErrors] = useState<RegisterFieldErrors>({});
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setError(null);
+    setErrors({});
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match.');
+      setErrors({
+        password: 'Passwords do not match.',
+        confirmPassword: 'Passwords do not match.',
+        general: 'Passwords do not match.',
+      });
       return;
     }
 
@@ -37,19 +103,7 @@ export function RegisterPage() {
       });
       navigate(ROUTES.LOGIN);
     } catch (caughtError: unknown) {
-      const resp = (caughtError as any)?.response;
-      let message: string | string[] = 'Registration failed. Please try again.';
-      if (resp?.data) {
-        const detail = resp.data.detail;
-        if (Array.isArray(detail)) {
-          message = detail.map((d: any) => d.msg ?? (typeof d === 'string' ? d : JSON.stringify(d)));
-        } else if (typeof detail === 'string') {
-          message = detail;
-        } else if (typeof resp.data === 'string') {
-          message = resp.data;
-        }
-      }
-      setError(message);
+      setErrors(parseRegisterErrors(caughtError));
     } finally {
       setLoading(false);
     }
@@ -74,10 +128,12 @@ export function RegisterPage() {
               type="text"
               value={firstName}
               onChange={(event) => setFirstName(event.target.value)}
+              aria-invalid={Boolean(errors.firstName)}
               className="w-full rounded-2xl border border-white/10 bg-[#0F131A] px-4 py-3 text-white outline-none transition placeholder:text-[#64748B] focus:border-[#3B82F6]"
               placeholder="John"
               required
             />
+            {errors.firstName ? <p className="mt-2 text-sm text-red-300">{errors.firstName}</p> : null}
           </div>
 
           <div>
@@ -86,10 +142,12 @@ export function RegisterPage() {
               type="text"
               value={lastName}
               onChange={(event) => setLastName(event.target.value)}
+              aria-invalid={Boolean(errors.lastName)}
               className="w-full rounded-2xl border border-white/10 bg-[#0F131A] px-4 py-3 text-white outline-none transition placeholder:text-[#64748B] focus:border-[#3B82F6]"
               placeholder="Doe"
               required
             />
+            {errors.lastName ? <p className="mt-2 text-sm text-red-300">{errors.lastName}</p> : null}
           </div>
         </div>
 
@@ -99,10 +157,12 @@ export function RegisterPage() {
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            aria-invalid={Boolean(errors.email)}
             className="w-full rounded-2xl border border-white/10 bg-[#0F131A] px-4 py-3 text-white outline-none transition placeholder:text-[#64748B] focus:border-[#3B82F6]"
             placeholder="user@example.com"
             required
           />
+          {errors.email ? <p className="mt-2 text-sm text-red-300">{errors.email}</p> : null}
         </div>
 
         <div>
@@ -125,10 +185,12 @@ export function RegisterPage() {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
+              aria-invalid={Boolean(errors.password)}
               className="w-full rounded-2xl border border-white/10 bg-[#0F131A] px-4 py-3 text-white outline-none transition placeholder:text-[#64748B] focus:border-[#3B82F6]"
               placeholder="Create password"
               required
             />
+            {errors.password ? <p className="mt-2 text-sm text-red-300">{errors.password}</p> : null}
           </div>
 
           <div>
@@ -137,24 +199,18 @@ export function RegisterPage() {
               type="password"
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
+              aria-invalid={Boolean(errors.confirmPassword)}
               className="w-full rounded-2xl border border-white/10 bg-[#0F131A] px-4 py-3 text-white outline-none transition placeholder:text-[#64748B] focus:border-[#3B82F6]"
               placeholder="Repeat password"
               required
             />
+            {errors.confirmPassword ? <p className="mt-2 text-sm text-red-300">{errors.confirmPassword}</p> : null}
           </div>
         </div>
 
-        {error ? (
+        {errors.general ? (
           <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            {Array.isArray(error) ? (
-              <ul className="list-disc list-inside space-y-1">
-                {error.map((e, i) => (
-                  <li key={i}>{e}</li>
-                ))}
-              </ul>
-            ) : (
-              <div>{error}</div>
-            )}
+            <div>{errors.general}</div>
           </div>
         ) : null}
 
