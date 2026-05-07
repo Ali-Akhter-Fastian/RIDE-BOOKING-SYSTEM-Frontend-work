@@ -6,7 +6,6 @@ import { AdminPortal } from './pages/admin/AdminPortal';
 import { ProfilePage } from './pages/ProfilePage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { RegisterPage } from './pages/auth/RegisterPage';
-import { VerifyOtpPage } from './pages/auth/VerifyOtpPage';
 import { useAuthContext } from './context/AuthContext';
 import { ROUTES } from './routes/routeConfig';
 
@@ -114,14 +113,6 @@ export default function App() {
         element={(
           <PublicOnly>
             <RegisterPage />
-          </PublicOnly>
-        )}
-      />
-      <Route
-        path={ROUTES.VERIFY_OTP}
-        element={(
-          <PublicOnly>
-            <VerifyOtpPage />
           </PublicOnly>
         )}
       />

@@ -5,7 +5,6 @@ const AUTH_PREFIX = `${API_PREFIX}/auth`;
 export const ROUTES = {
   LOGIN:          `${AUTH_PREFIX}/login`,
   REGISTER:       `${AUTH_PREFIX}/register`,
-  VERIFY_OTP:     `${AUTH_PREFIX}/verify-otp`,
   PROFILE:        '/profile',
   APP_HOME:       '/app',
 

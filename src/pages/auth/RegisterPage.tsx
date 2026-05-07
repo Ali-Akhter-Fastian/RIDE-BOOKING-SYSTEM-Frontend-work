@@ -331,12 +331,9 @@ export function RegisterPage() {
         </button>
       </form>
 
-      <div className="mt-6 flex items-center justify-between text-sm text-[#94A3B8]">
-        <Link to={ROUTES.LOGIN} className="transition hover:text-white">
-          Back to sign in
-        </Link>
-        <Link to={ROUTES.VERIFY_OTP} className="transition hover:text-white">
-          Already verified?
+      <div className="mt-6 text-center">
+        <Link to={ROUTES.LOGIN} className="text-sm text-[#94A3B8] transition hover:text-white">
+          Already have an account? Sign in
         </Link>
       </div>
     </AuthLayout>

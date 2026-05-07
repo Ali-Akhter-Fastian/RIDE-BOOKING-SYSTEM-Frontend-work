@@ -19,10 +19,6 @@ export const authApi = {
   login: (data: { email?: string; phone?: string; password: string }) =>
     client.post(`${AUTH_ROUTE_PREFIX}/login`, data),
 
-  // POST ${AUTH_ROUTE_PREFIX}/verify-otp
-  verifyOtp: (data: { phone: string; otp: string }) =>
-    client.post(`${AUTH_ROUTE_PREFIX}/verify-otp`, data),
-
   // POST ${AUTH_ROUTE_PREFIX}/refresh
   refreshToken: (refresh_token: string) =>
     client.post(`${AUTH_ROUTE_PREFIX}/refresh`, { refresh_token }),
