@@ -63,6 +63,17 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<LoginFieldErrors>({});
+  const [touched, setTouched] = useState({
+    identifier: false,
+    password: false,
+  });
+  const inputClassName = (hasError: boolean) =>
+    `w-full rounded-2xl border bg-[#0F131A] px-4 py-3 text-white outline-none transition placeholder:text-[#64748B] ${
+      hasError ? 'border-red-500 focus:border-red-400' : 'border-white/10 focus:border-[#F5A623]'
+    }`;
+
+  const showFieldError = (field: keyof typeof touched, value: string, message?: string) =>
+    touched[field] && (!value.trim() || Boolean(message));
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -100,13 +111,26 @@ export function LoginPage() {
           <input
             type="text"
             value={identifier}
-            onChange={(event) => setIdentifier(event.target.value)}
+            onChange={(event) => {
+              setIdentifier(event.target.value);
+              if (errors.identifier && event.target.value.trim()) {
+                setErrors((current) => ({ ...current, identifier: undefined }));
+              }
+            }}
+            onBlur={() => {
+              setTouched((current) => ({ ...current, identifier: true }));
+              if (!identifier.trim()) {
+                setErrors((current) => ({ ...current, identifier: 'Email or phone is required.' }));
+              }
+            }}
             placeholder="name@example.com or +123456789"
-            aria-invalid={Boolean(errors.identifier)}
-            className="w-full rounded-2xl border border-white/10 bg-[#0F131A] px-4 py-3 text-white outline-none transition placeholder:text-[#64748B] focus:border-[#F5A623]"
+            aria-invalid={showFieldError('identifier', identifier, errors.identifier)}
+            className={inputClassName(Boolean(errors.identifier))}
             required
           />
-          {errors.identifier ? <p className="mt-2 text-sm text-red-300">{errors.identifier}</p> : null}
+          {showFieldError('identifier', identifier, errors.identifier) ? (
+            <p className="mt-2 text-sm text-red-300">{errors.identifier ?? 'Email or phone is required.'}</p>
+          ) : null}
         </div>
 
         <div>
@@ -114,13 +138,26 @@ export function LoginPage() {
           <input
             type="password"
             value={password}
-            onChange={(event) => setPassword(event.target.value)}
+            onChange={(event) => {
+              setPassword(event.target.value);
+              if (errors.password && event.target.value.trim()) {
+                setErrors((current) => ({ ...current, password: undefined }));
+              }
+            }}
+            onBlur={() => {
+              setTouched((current) => ({ ...current, password: true }));
+              if (!password) {
+                setErrors((current) => ({ ...current, password: 'Password is required.' }));
+              }
+            }}
             placeholder="Enter your password"
-            aria-invalid={Boolean(errors.password)}
-            className="w-full rounded-2xl border border-white/10 bg-[#0F131A] px-4 py-3 text-white outline-none transition placeholder:text-[#64748B] focus:border-[#F5A623]"
+            aria-invalid={showFieldError('password', password, errors.password)}
+            className={inputClassName(Boolean(errors.password))}
             required
           />
-          {errors.password ? <p className="mt-2 text-sm text-red-300">{errors.password}</p> : null}
+          {showFieldError('password', password, errors.password) ? (
+            <p className="mt-2 text-sm text-red-300">{errors.password ?? 'Password is required.'}</p>
+          ) : null}
         </div>
 
         {errors.general ? (
