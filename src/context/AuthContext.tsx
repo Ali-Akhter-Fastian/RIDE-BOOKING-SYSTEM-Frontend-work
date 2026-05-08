@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authApi } from '../api/authApi';
+import { rideApi } from '../api/rideApi';
 import { tokenStorage } from '../utils/tokenStorage';
 import { ROLES, Role } from '../constants/roles';
 
@@ -36,6 +37,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    // attempt to cancel any active rides for the user before clearing tokens
+    try {
+      const res = await rideApi.history({ page: 1, page_size: 100 });
+      const list = (res as any)?.data?.rides ?? [];
+      const activeStatuses = ['requested', 'accepted', 'in_progress'];
+      const active = list.filter((r: any) => activeStatuses.includes(r.status));
+      if (active.length) {
+        await Promise.allSettled(active.map((r: any) => rideApi.cancel(r.id)));
+      }
+    } catch (e) {
+      // non-fatal: log and continue logout
+      // eslint-disable-next-line no-console
+      console.error('Failed to cancel active rides on logout', e);
+    }
+
     try { await authApi.logout(); } catch {}
     tokenStorage.clear();
     setUser(null);

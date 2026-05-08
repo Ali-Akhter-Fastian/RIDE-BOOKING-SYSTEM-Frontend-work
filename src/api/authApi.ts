@@ -1,4 +1,5 @@
 import { client } from './client';
+import { tokenStorage } from '../utils/tokenStorage';
 
 const AUTH_ROUTE_PREFIX = '/api/auth';
 
@@ -18,7 +19,7 @@ export const authApi = {
   // POST ${AUTH_ROUTE_PREFIX}/login
   login: (data: { email?: string; phone?: string; password: string }) =>
     client.post(`${AUTH_ROUTE_PREFIX}/login`, data),
-
+ 
   // POST ${AUTH_ROUTE_PREFIX}/refresh
   refreshToken: (refresh_token: string) =>
     client.post(`${AUTH_ROUTE_PREFIX}/refresh`, { refresh_token }),
@@ -29,5 +30,5 @@ export const authApi = {
 
   // POST ${AUTH_ROUTE_PREFIX}/logout
   logout: () =>
-    client.post(`${AUTH_ROUTE_PREFIX}/logout`),
+    client.post(`${AUTH_ROUTE_PREFIX}/logout`, { refresh_token: tokenStorage.getRefresh() ?? '' }),
 };

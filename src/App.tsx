@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { RiderPortal } from './pages/rider/RiderPortal';
 import { DriverPortal } from './pages/driver/DriverPortal';
@@ -7,12 +7,32 @@ import { ProfilePage } from './pages/ProfilePage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { RegisterPage } from './pages/auth/RegisterPage';
 import { useAuthContext } from './context/AuthContext';
+import { ROLES } from './constants/roles';
 import { ROUTES } from './routes/routeConfig';
 
 type Portal = 'rider' | 'driver' | 'admin';
 
 function PortalShell() {
+  const { role } = useAuthContext();
   const [activePortal, setActivePortal] = useState<Portal>('rider');
+
+  useEffect(() => {
+    if (role === ROLES.DRIVER) {
+      setActivePortal('driver');
+      return;
+    }
+
+    if (role === ROLES.ADMIN) {
+      setActivePortal('admin');
+      return;
+    }
+
+    setActivePortal('rider');
+  }, [role]);
+
+  if (role === ROLES.DRIVER) {
+    // keep the shell on the driver's portal by default, but still render the switcher below
+  }
 
   return (
     <div className="size-full flex flex-col overflow-hidden bg-[#0A0C10]">
@@ -79,7 +99,7 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 }
 
 function PublicOnly({ children }: { children: JSX.Element }) {
-  const { isAuthenticated, loading } = useAuthContext();
+  const { loading } = useAuthContext();
 
   if (loading) {
     return (
@@ -87,10 +107,6 @@ function PublicOnly({ children }: { children: JSX.Element }) {
         <div className="text-sm text-[#94A3B8]">Loading authentication...</div>
       </div>
     );
-  }
-
-  if (isAuthenticated) {
-    return <Navigate to={ROUTES.APP_HOME} replace />;
   }
 
   return children;

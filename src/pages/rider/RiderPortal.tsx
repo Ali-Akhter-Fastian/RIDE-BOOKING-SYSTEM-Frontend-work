@@ -1,15 +1,20 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ROUTES } from '../../routes/routeConfig';
 import { Gauge, Bell, User, MapPin, Search, Mic, Home, Briefcase, Ticket, CreditCard, Clock, Users, X, Star, DollarSign, History } from 'lucide-react';
 import { MapView } from '../../components/map/RideMap';
+import { useRide } from '../../hooks/useRide';
+import { ROUTES } from '../../routes/routeConfig';
+import { rideApi } from '../../api/rideApi';
 
 type RiderScreen = 'home' | 'finding' | 'active' | 'completed' | 'history' | 'payment';
 
 export function RiderPortal() {
   const [screen, setScreen] = useState<RiderScreen>('home');
+  const [pickupLocation, setPickupLocation] = useState('Current Location');
   const [destination, setDestination] = useState('');
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
+  const { requestRide, loading, error } = useRide();
+  const [rideId, setRideId] = useState<string | null>(null);
 
   return (
     <div className="size-full flex flex-col overflow-hidden">
@@ -18,14 +23,31 @@ export function RiderPortal() {
       <div className="flex-1 relative overflow-hidden">
         {screen === 'home' && (
           <HomeScreen
+            pickupLocation={pickupLocation}
+            setPickupLocation={setPickupLocation}
             destination={destination}
             setDestination={setDestination}
             selectedRide={selectedRide}
             setSelectedRide={setSelectedRide}
             setScreen={setScreen}
+            onConfirmRide={async () => {
+              try {
+                const res = await requestRide({
+                  origin: pickupLocation,
+                  destination,
+                });
+                // store ride id so downstream screens can call APIs
+                if (res && (res as any).id) setRideId((res as any).id);
+                setScreen('finding');
+              } catch (e) {
+                console.error('Failed to create ride', e);
+              }
+            }}
+            loading={loading}
+            error={error}
           />
         )}
-        {screen === 'finding' && <FindingDriverScreen setScreen={setScreen} />}
+        {screen === 'finding' && <FindingDriverScreen rideId={rideId} setScreen={setScreen} />}
         {screen === 'active' && <ActiveRideScreen setScreen={setScreen} />}
         {screen === 'completed' && <CompletedScreen setScreen={setScreen} />}
         {screen === 'history' && <HistoryScreen setScreen={setScreen} />}
@@ -66,7 +88,10 @@ function Header({ screen, setScreen }: { screen: RiderScreen; setScreen: (s: Rid
           <Bell className="w-5 h-5 text-[#94A3B8]" />
           <span className="absolute top-1 right-1 w-2 h-2 bg-[#EF4444] rounded-full"></span>
         </button>
-        <button onClick={() => navigate(ROUTES.PROFILE)} className="flex items-center gap-2 p-2 hover:bg-[#1A1E28] rounded-lg transition-colors">
+        <button
+          onClick={() => navigate(ROUTES.PROFILE)}
+          className="flex items-center gap-2 p-2 hover:bg-[#1A1E28] rounded-lg transition-colors"
+        >
           <User className="w-5 h-5 text-[#94A3B8]" />
         </button>
       </div>
@@ -74,7 +99,7 @@ function Header({ screen, setScreen }: { screen: RiderScreen; setScreen: (s: Rid
   );
 }
 
-function HomeScreen({ destination, setDestination, selectedRide, setSelectedRide, setScreen }: any) {
+function HomeScreen({ pickupLocation, setPickupLocation, destination, setDestination, selectedRide, setSelectedRide, setScreen, onConfirmRide, loading, error }: any) {
   const rideOptions = [
     { id: 'ridex', name: 'RideX', subtitle: 'Standard', eta: '3 min away', price: '$4.20', seats: 4, image: '🚗' },
     { id: 'ridexl', name: 'RideXL', subtitle: 'Larger vehicle', eta: '5 min away', price: '$6.80', seats: 6, image: '🚙' },
@@ -119,10 +144,15 @@ function HomeScreen({ destination, setDestination, selectedRide, setSelectedRide
           <div className="flex items-center gap-3 p-4 bg-[#1A1E28] rounded-lg border border-[#1E2433]">
             <MapPin className="w-5 h-5 text-[#F5A623]" />
             <div className="flex-1">
-              <div className="text-xs text-[#94A3B8]">Pickup location</div>
-              <div className="text-sm">Current Location</div>
+              <div className="text-xs text-[#94A3B8] mb-1">Pickup location</div>
+              <input
+                type="text"
+                value={pickupLocation}
+                onChange={(e) => setPickupLocation(e.target.value)}
+                placeholder="Enter pickup location"
+                className="w-full bg-transparent text-sm text-[#F1F5F9] placeholder:text-[#94A3B8] focus:outline-none"
+              />
             </div>
-            <button className="text-sm text-[#F5A623]">Change</button>
           </div>
 
           {destination && (
@@ -160,12 +190,17 @@ function HomeScreen({ destination, setDestination, selectedRide, setSelectedRide
 
               {selectedRide && (
                 <button
-                  onClick={() => setScreen('finding')}
-                  className="w-full bg-[#F5A623] hover:bg-[#F5A623]/90 text-[#0A0C10] py-4 rounded-lg font-medium transition-all"
+                  onClick={async () => {
+                    await onConfirmRide();
+                    setScreen('finding');
+                  }}
+                  disabled={loading}
+                  className="w-full bg-[#F5A623] hover:bg-[#F5A623]/90 disabled:opacity-60 disabled:cursor-not-allowed text-[#0A0C10] py-4 rounded-lg font-medium transition-all"
                 >
-                  Confirm {selectedOption?.name} — {selectedOption?.price}
+                  {loading ? 'Requesting ride...' : `Confirm ${selectedOption?.name} — ${selectedOption?.price}`}
                 </button>
               )}
+              {error && <div className="text-sm text-[#EF4444]">{error}</div>}
             </>
           )}
         </div>
@@ -174,7 +209,28 @@ function HomeScreen({ destination, setDestination, selectedRide, setSelectedRide
   );
 }
 
-function FindingDriverScreen({ setScreen }: any) {
+function FindingDriverScreen({ rideId, setScreen }: any) {
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  const handleCancelRide = async () => {
+    if (!rideId) {
+      setCancelError('No ride to cancel');
+      return;
+    }
+    setIsCancelling(true);
+    setCancelError(null);
+    try {
+      await rideApi.cancel(rideId);
+      setScreen('home');
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail ?? e?.message ?? 'Failed to cancel ride';
+      setCancelError(msg);
+      console.error('Cancel ride error:', e);
+    } finally {
+      setIsCancelling(false);
+    }
+  };
   return (
     <>
       <MapView />
@@ -194,9 +250,10 @@ function FindingDriverScreen({ setScreen }: any) {
             [Simulate: Driver Found]
           </button>
           <div className="mt-4">
-            <button onClick={() => setScreen('home')} className="text-sm text-[#EF4444] hover:underline">
-              Cancel ride
+            <button onClick={handleCancelRide} className="text-sm text-[#EF4444] hover:underline" disabled={isCancelling}>
+              {isCancelling ? 'Cancelling...' : 'Cancel ride'}
             </button>
+            {cancelError && <div className="text-sm text-[#EF4444] mt-2">{cancelError}</div>}
           </div>
         </div>
       </div>
