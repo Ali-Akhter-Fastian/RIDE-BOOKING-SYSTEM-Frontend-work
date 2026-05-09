@@ -16,6 +16,22 @@ export const authApi = {
   }) =>
     client.post(`${AUTH_ROUTE_PREFIX}/register`, data),
 
+  // POST /api/driver/register
+  registerDriver: (data: {
+    email: string;
+    password: string;
+    confirm_password: string;
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+    license_number: string;
+    vehicle_number: string;
+    vehicle_type: string;
+    vehicle_make_model?: string;
+    vehicle_color?: string;
+  }) =>
+    client.post('/api/driver/register', data),
+
   // POST ${AUTH_ROUTE_PREFIX}/login
   login: (data: { email?: string; phone?: string; password: string }) =>
     client.post(`${AUTH_ROUTE_PREFIX}/login`, data),

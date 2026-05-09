@@ -13,9 +13,16 @@ export const driverApi = {
   setStatus: (id: string, status: 'online' | 'offline' | 'busy') =>
     client.put(`/drivers/${id}/status`, { status }),
 
-  // PUT /drivers/location — GPS ping every ~5s; feeds Workflow A driver pool
+  // PATCH /api/driver/status — set driver availability (online/offline)
+  setAvailability: (is_available: boolean) =>
+    client.patch('/api/driver/status', { is_available }),
+
+  // DELETE /api/driver/locations — clear stored driver locations
+  deleteLocations: () => client.delete('/api/driver/locations'),
+
+  // POST /api/driver/save-location — stores current driver coordinates
   updateLocation: (lat: number, lng: number) =>
-    client.put('/drivers/location', { lat, lng }),
+    client.post('/api/driver/save-location', { latitude: lat, longitude: lng }),
 
   // GET /drivers/nearby — input for Workflow A ranking payload
   nearby: (lat: number, lng: number, radius_km = 5) =>

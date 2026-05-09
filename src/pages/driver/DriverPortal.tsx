@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Car, DollarSign, TrendingUp, Phone, MessageSquare, Navigation, CheckCircle, XCircle, Clock, Star, User, FileText } from 'lucide-react';
+import ProfilePage from '../ProfilePage';
 import { MapView } from '../../components/map/RideMap';
+import { useDriverLocation } from '../../hooks/useDriverLocation';
 
 type DriverScreen = 'home' | 'incoming' | 'active' | 'earnings' | 'profile';
 
@@ -48,6 +50,14 @@ function Header({ screen, setScreen }: any) {
 }
 
 function HomeScreen({ isOnline, setIsOnline, setScreen }: any) {
+  const { coords, error } = useDriverLocation(isOnline);
+
+  useEffect(() => {
+    if (isOnline && coords) {
+      // The hook already pings while online; this keeps the UI aware that coordinates exist.
+    }
+  }, [isOnline, coords]);
+
   return (
     <>
       <MapView />
@@ -55,7 +65,40 @@ function HomeScreen({ isOnline, setIsOnline, setScreen }: any) {
         <div className="bg-[#12151C] border border-[#1E2433] rounded-2xl p-8 max-w-md w-full shadow-2xl pointer-events-auto">
           <div className="text-center mb-8">
             <button
-              onClick={() => {
+                onClick={async () => {
+                const { driverApi } = await import('../../api/driverApi');
+                if (!isOnline && navigator.geolocation) {
+                  navigator.geolocation.getCurrentPosition(
+                    async (position) => {
+                      try {
+                        // Save immediate location and mark driver online on the server
+                        await driverApi.updateLocation(position.coords.latitude, position.coords.longitude);
+                        await driverApi.setAvailability(true);
+                      } catch {
+                        // Ignore failures here; the background hook will retry while online.
+                      }
+                      setIsOnline(true);
+                      setTimeout(() => setScreen('incoming'), 2000);
+                    },
+                    async () => {
+                      try {
+                        await driverApi.setAvailability(true);
+                      } catch {}
+                      setIsOnline(true);
+                      setTimeout(() => setScreen('incoming'), 2000);
+                    },
+                    { enableHighAccuracy: true, timeout: 10000 }
+                  );
+                  return;
+                }
+
+                // Going offline: set availability then clear stored locations
+                try {
+                  await driverApi.setAvailability(false);
+                  await driverApi.deleteLocations();
+                } catch {
+                  // ignore server errors — still update UI
+                }
                 setIsOnline(!isOnline);
                 if (!isOnline) {
                   setTimeout(() => setScreen('incoming'), 2000);
@@ -77,6 +120,7 @@ function HomeScreen({ isOnline, setIsOnline, setScreen }: any) {
                 <div className={`text-sm ${isOnline ? 'text-white/80' : 'text-[#94A3B8]'}`}>
                   {isOnline ? 'Ready for rides' : 'Tap to go online'}
                 </div>
+                {error ? <div className="mt-2 text-xs text-red-300">{error}</div> : null}
               </div>
             </button>
           </div>
@@ -328,72 +372,6 @@ function EarningsScreen({ setScreen }: any) {
 }
 
 function ProfileScreen({ setScreen }: any) {
-  return (
-    <div className="size-full bg-[#0A0C10] p-6 overflow-auto">
-      <div className="max-w-4xl mx-auto">
-        <h2 className="text-2xl mb-6" style={{ fontFamily: 'var(--font-display)' }}>Driver Profile</h2>
-
-        <div className="bg-[#12151C] border border-[#1E2433] rounded-xl p-6 mb-6">
-          <div className="flex items-center gap-6 mb-6">
-            <div className="w-24 h-24 bg-gradient-to-br from-[#3B82F6] to-[#8B5CF6] rounded-full flex items-center justify-center text-3xl font-bold">
-              AK
-            </div>
-            <div className="flex-1">
-              <h3 className="text-xl font-bold mb-1">Ahmad K.</h3>
-              <div className="flex items-center gap-2 text-[#F59E0B] mb-2">
-                <Star className="w-5 h-5 fill-current" />
-                <span className="text-lg" style={{ fontFamily: 'var(--font-mono)' }}>4.91</span>
-              </div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#10B981]/20 border border-[#10B981] rounded-full">
-                <div className="w-2 h-2 bg-[#10B981] rounded-full animate-pulse"></div>
-                <span className="text-sm text-[#10B981]">Verified Driver</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            {[
-              { label: 'Acceptance Rate', value: '94%' },
-              { label: 'Completion Rate', value: '98%' },
-              { label: 'Cancellation Rate', value: '2%' },
-            ].map((stat) => (
-              <div key={stat.label} className="bg-[#1A1E28] rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-[#3B82F6]" style={{ fontFamily: 'var(--font-mono)' }}>
-                  {stat.value}
-                </div>
-                <div className="text-xs text-[#94A3B8] mt-1">{stat.label}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="space-y-3">
-            <h4 className="text-sm text-[#94A3B8] mb-3">Documents</h4>
-            {[
-              { name: 'Driver License', status: 'Verified', color: 'text-[#10B981]' },
-              { name: 'Vehicle Registration', status: 'Verified', color: 'text-[#10B981]' },
-              { name: 'Insurance', status: 'Verified', color: 'text-[#10B981]' },
-            ].map((doc) => (
-              <div key={doc.name} className="flex items-center justify-between bg-[#1A1E28] rounded-lg p-3">
-                <div className="flex items-center gap-3">
-                  <FileText className="w-5 h-5 text-[#3B82F6]" />
-                  <span>{doc.name}</span>
-                </div>
-                <div className={`text-sm ${doc.color} flex items-center gap-1`}>
-                  <CheckCircle className="w-4 h-4" />
-                  {doc.status}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <button
-          onClick={() => setScreen('home')}
-          className="bg-[#3B82F6] hover:bg-[#3B82F6]/90 text-white px-6 py-3 rounded-lg"
-        >
-          Back to Home
-        </button>
-      </div>
-    </div>
-  );
+  // Reuse the shared ProfilePage so drivers see the same account UI as riders.
+  return <ProfilePage />;
 }

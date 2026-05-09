@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '../context/AuthContext';
 import { authApi } from '../api/authApi';
 import { ROUTES } from '../routes/routeConfig';
-import { LogOut, User, Mail, Shield, Calendar, Loader } from 'lucide-react';
+import { ArrowLeft, LogOut, User, Mail, Shield, Calendar, Loader } from 'lucide-react';
 
 interface UserProfile {
   id: string;
@@ -61,6 +61,10 @@ export function ProfilePage() {
     }
   };
 
+  const handleBackHome = () => {
+    navigate(ROUTES.APP_HOME, { replace: true });
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0A0C10]">
@@ -93,14 +97,23 @@ export function ProfilePage() {
               </div>
               <p className="text-[#94A3B8]">Manage your account information</p>
             </div>
-            <button
-              onClick={handleLogout}
-              disabled={loggingOut}
-              className="flex items-center gap-2 rounded-xl bg-red-500/20 px-4 py-2 text-sm font-medium text-red-200 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <LogOut className="h-4 w-4" />
-              {loggingOut ? 'Logging out...' : 'Logout'}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleBackHome}
+                className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to Home
+              </button>
+              <button
+                onClick={handleLogout}
+                disabled={loggingOut}
+                className="flex items-center gap-2 rounded-xl bg-red-500/20 px-4 py-2 text-sm font-medium text-red-200 transition hover:bg-red-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <LogOut className="h-4 w-4" />
+                {loggingOut ? 'Logging out...' : 'Logout'}
+              </button>
+            </div>
           </div>
 
           {/* Profile Content */}

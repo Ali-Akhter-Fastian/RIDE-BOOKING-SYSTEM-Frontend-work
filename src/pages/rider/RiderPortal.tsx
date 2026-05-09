@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Gauge, Bell, User, MapPin, Search, Mic, Home, Briefcase, Ticket, CreditCard, Clock, Users, X, Star, DollarSign, History } from 'lucide-react';
 import { MapView } from '../../components/map/RideMap';
@@ -406,11 +406,56 @@ function CompletedScreen({ setScreen }: any) {
 }
 
 function HistoryScreen({ setScreen }: any) {
-  const trips = [
-    { id: 1, driver: 'Ahmad K.', date: '2026-04-22', route: 'Downtown → Airport', amount: '$18.50', status: 'Completed' },
-    { id: 2, driver: 'Sara M.', date: '2026-04-21', route: 'Home → Office', amount: '$4.20', status: 'Completed' },
-    { id: 3, driver: 'John D.', date: '2026-04-20', route: 'Mall → Home', amount: '$12.80', status: 'Completed' },
-  ];
+  const [rides, setRides] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchRideHistory = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await rideApi.history({ page: 1, page_size: 20 });
+        // Handle both direct response and nested data structure
+        const ridesData = (response as any)?.rides || response || [];
+        setRides(Array.isArray(ridesData) ? ridesData : []);
+      } catch (err: any) {
+        console.error('Failed to fetch ride history:', err);
+        const errorMsg = err?.response?.data?.detail || err?.message || 'Failed to load ride history';
+        setError(errorMsg);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRideHistory();
+  }, []);
+
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const formatAmount = (amount: any) => {
+    if (amount === null || amount === undefined) return 'N/A';
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    return `$${num.toFixed(2)}`;
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'completed':
+        return 'text-[#10B981]';
+      case 'cancelled':
+        return 'text-[#EF4444]';
+      default:
+        return 'text-[#94A3B8]';
+    }
+  };
 
   return (
     <div className="size-full bg-[#0A0C10] p-6 overflow-auto">
@@ -422,22 +467,54 @@ function HistoryScreen({ setScreen }: any) {
           </button>
         </div>
 
-        <div className="space-y-3">
-          {trips.map((trip) => (
-            <div key={trip.id} className="bg-[#12151C] border border-[#1E2433] rounded-lg p-4 hover:border-[#F5A623]/50 transition-all">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="font-medium">{trip.route}</div>
-                  <div className="text-sm text-[#94A3B8] mt-1">{trip.driver} • {trip.date}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-lg text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>{trip.amount}</div>
-                  <div className="text-xs text-[#10B981]">{trip.status}</div>
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <div className="inline-flex p-4 bg-[#1A1E28] rounded-full mb-4">
+                <div className="animate-spin w-8 h-8 border-3 border-[#F5A623] border-t-transparent rounded-full"></div>
+              </div>
+              <p className="text-[#94A3B8]">Loading your ride history...</p>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="bg-[#EF4444]/10 border border-[#EF4444]/30 rounded-lg p-4 text-[#EF4444]">
+            <p className="font-medium">Error loading ride history</p>
+            <p className="text-sm mt-1">{error}</p>
+          </div>
+        ) : rides.length === 0 ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <p className="text-[#94A3B8] mb-2">No rides found</p>
+              <button
+                onClick={() => setScreen('home')}
+                className="text-sm text-[#F5A623] hover:underline"
+              >
+                Request your first ride
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {rides.map((ride) => (
+              <div key={ride.id} className="bg-[#12151C] border border-[#1E2433] rounded-lg p-4 hover:border-[#F5A623]/50 transition-all">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="font-medium">{ride.origin} → {ride.destination}</div>
+                    <div className="text-sm text-[#94A3B8] mt-1">{formatDate(ride.created_at)}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>
+                      {formatAmount(ride.fare)}
+                    </div>
+                    <div className={`text-xs capitalize ${getStatusColor(ride.status)}`}>
+                      {ride.status}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

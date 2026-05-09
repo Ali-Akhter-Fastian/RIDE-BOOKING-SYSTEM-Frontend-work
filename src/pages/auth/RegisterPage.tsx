@@ -8,6 +8,11 @@ type RegisterFieldErrors = {
   firstName?: string;
   lastName?: string;
   email?: string;
+  licenseNumber?: string;
+  vehicleNumber?: string;
+  vehicleType?: string;
+  vehicleMakeModel?: string;
+  vehicleColor?: string;
   password?: string;
   confirmPassword?: string;
   general?: string;
@@ -43,6 +48,16 @@ function parseRegisterErrors(caughtError: unknown): RegisterFieldErrors {
         errors.lastName = message;
       } else if (field === 'email') {
         errors.email = message;
+      } else if (field === 'license_number') {
+        errors.licenseNumber = message;
+      } else if (field === 'vehicle_number') {
+        errors.vehicleNumber = message;
+      } else if (field === 'vehicle_type') {
+        errors.vehicleType = message;
+      } else if (field === 'vehicle_make_model') {
+        errors.vehicleMakeModel = message;
+      } else if (field === 'vehicle_color') {
+        errors.vehicleColor = message;
       } else if (field === 'password') {
         errors.password = message;
       } else if (field === 'confirm_password') {
@@ -72,6 +87,11 @@ export function RegisterPage() {
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('rider');
+  const [licenseNumber, setLicenseNumber] = useState('');
+  const [vehicleNumber, setVehicleNumber] = useState('');
+  const [vehicleType, setVehicleType] = useState('');
+  const [vehicleMakeModel, setVehicleMakeModel] = useState('');
+  const [vehicleColor, setVehicleColor] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -80,6 +100,11 @@ export function RegisterPage() {
     firstName: false,
     lastName: false,
     email: false,
+    licenseNumber: false,
+    vehicleNumber: false,
+    vehicleType: false,
+    vehicleMakeModel: false,
+    vehicleColor: false,
     password: false,
     confirmPassword: false,
   });
@@ -96,6 +121,11 @@ export function RegisterPage() {
     const trimmedFirstName = firstName.trim();
     const trimmedLastName = lastName.trim();
     const trimmedEmail = email.trim();
+    const trimmedLicenseNumber = licenseNumber.trim();
+    const trimmedVehicleNumber = vehicleNumber.trim();
+    const trimmedVehicleType = vehicleType.trim();
+    const trimmedVehicleMakeModel = vehicleMakeModel.trim();
+    const trimmedVehicleColor = vehicleColor.trim();
     const nextErrors: RegisterFieldErrors = {};
 
     if (!trimmedFirstName) {
@@ -112,6 +142,24 @@ export function RegisterPage() {
 
     if (!confirmPassword) {
       nextErrors.confirmPassword = 'Confirm your password.';
+    }
+
+    if (role === 'driver') {
+      if (!trimmedLicenseNumber) {
+        nextErrors.licenseNumber = 'License number is required for drivers.';
+      }
+
+      if (!trimmedVehicleNumber) {
+        nextErrors.vehicleNumber = 'Vehicle number is required for drivers.';
+      }
+
+      if (!trimmedVehicleType) {
+        nextErrors.vehicleType = 'Vehicle type is required for drivers.';
+      }
+
+      if (!trimmedVehicleMakeModel) {
+        nextErrors.vehicleMakeModel = 'Vehicle make/model is required for drivers.';
+      }
     }
 
     if (Object.keys(nextErrors).length > 0) {
@@ -132,14 +180,29 @@ export function RegisterPage() {
     setLoading(true);
 
     try {
-      await authApi.register({
-        email: trimmedEmail,
-        password,
-        confirm_password: confirmPassword,
-        first_name: trimmedFirstName,
-        last_name: trimmedLastName,
-        role,
-      });
+      if (role === 'driver') {
+        await authApi.registerDriver({
+          email: trimmedEmail,
+          password,
+          confirm_password: confirmPassword,
+          first_name: trimmedFirstName,
+          last_name: trimmedLastName,
+          license_number: trimmedLicenseNumber,
+          vehicle_number: trimmedVehicleNumber,
+          vehicle_type: trimmedVehicleType,
+          vehicle_make_model: trimmedVehicleMakeModel,
+          vehicle_color: trimmedVehicleColor || undefined,
+        });
+      } else {
+        await authApi.register({
+          email: trimmedEmail,
+          password,
+          confirm_password: confirmPassword,
+          first_name: trimmedFirstName,
+          last_name: trimmedLastName,
+          role,
+        });
+      }
       navigate(ROUTES.LOGIN);
     } catch (caughtError: unknown) {
       setErrors(parseRegisterErrors(caughtError));
@@ -243,11 +306,163 @@ export function RegisterPage() {
           ) : null}
         </div>
 
+          {role === 'driver' ? (
+            <div className="space-y-4 rounded-3xl border border-[#223047] bg-[#0B111A] p-4 sm:p-5">
+              <div>
+                <h3 className="text-base font-semibold text-white">Driver details</h3>
+                <p className="mt-1 text-sm text-[#94A3B8]">
+                  These fields are required so your account is also stored in the drivers table.
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[#CBD5E1]">
+                    License number <span className="text-red-300">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={licenseNumber}
+                    onChange={(event) => {
+                      setLicenseNumber(event.target.value);
+                      if (errors.licenseNumber && event.target.value.trim()) {
+                        setErrors((current) => ({ ...current, licenseNumber: undefined }));
+                      }
+                    }}
+                    onBlur={() => setTouched((current) => ({ ...current, licenseNumber: true }))}
+                    aria-invalid={showFieldError('licenseNumber', licenseNumber, errors.licenseNumber)}
+                    className={inputClassName(Boolean(errors.licenseNumber))}
+                    placeholder="DL123456"
+                    required={role === 'driver'}
+                  />
+                  {showFieldError('licenseNumber', licenseNumber, errors.licenseNumber) ? (
+                    <p className="mt-2 text-sm text-red-300">{errors.licenseNumber}</p>
+                  ) : null}
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[#CBD5E1]">
+                    Vehicle number / plate <span className="text-red-300">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={vehicleNumber}
+                    onChange={(event) => {
+                      setVehicleNumber(event.target.value);
+                      if (errors.vehicleNumber && event.target.value.trim()) {
+                        setErrors((current) => ({ ...current, vehicleNumber: undefined }));
+                      }
+                    }}
+                    onBlur={() => setTouched((current) => ({ ...current, vehicleNumber: true }))}
+                    aria-invalid={showFieldError('vehicleNumber', vehicleNumber, errors.vehicleNumber)}
+                    className={inputClassName(Boolean(errors.vehicleNumber))}
+                    placeholder="ABC-1234"
+                    required={role === 'driver'}
+                  />
+                  {showFieldError('vehicleNumber', vehicleNumber, errors.vehicleNumber) ? (
+                    <p className="mt-2 text-sm text-red-300">{errors.vehicleNumber}</p>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[#CBD5E1]">
+                    Vehicle type <span className="text-red-300">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={vehicleType}
+                    onChange={(event) => {
+                      setVehicleType(event.target.value);
+                      if (errors.vehicleType && event.target.value.trim()) {
+                        setErrors((current) => ({ ...current, vehicleType: undefined }));
+                      }
+                    }}
+                    onBlur={() => setTouched((current) => ({ ...current, vehicleType: true }))}
+                    aria-invalid={showFieldError('vehicleType', vehicleType, errors.vehicleType)}
+                    className={inputClassName(Boolean(errors.vehicleType))}
+                    placeholder="Sedan, SUV, bike"
+                    required={role === 'driver'}
+                  />
+                  {showFieldError('vehicleType', vehicleType, errors.vehicleType) ? (
+                    <p className="mt-2 text-sm text-red-300">{errors.vehicleType}</p>
+                  ) : null}
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[#CBD5E1]">
+                    Vehicle make/model <span className="text-red-300">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={vehicleMakeModel}
+                    onChange={(event) => {
+                      setVehicleMakeModel(event.target.value);
+                      if (errors.vehicleMakeModel && event.target.value.trim()) {
+                        setErrors((current) => ({ ...current, vehicleMakeModel: undefined }));
+                      }
+                    }}
+                    onBlur={() => setTouched((current) => ({ ...current, vehicleMakeModel: true }))}
+                    aria-invalid={showFieldError('vehicleMakeModel', vehicleMakeModel, errors.vehicleMakeModel)}
+                    className={inputClassName(Boolean(errors.vehicleMakeModel))}
+                    placeholder="Toyota Corolla"
+                    required={role === 'driver'}
+                  />
+                  {showFieldError('vehicleMakeModel', vehicleMakeModel, errors.vehicleMakeModel) ? (
+                    <p className="mt-2 text-sm text-red-300">{errors.vehicleMakeModel}</p>
+                  ) : null}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[#CBD5E1]">
+                  Vehicle color <span className="text-[#94A3B8]">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={vehicleColor}
+                  onChange={(event) => {
+                    setVehicleColor(event.target.value);
+                    if (errors.vehicleColor && event.target.value.trim()) {
+                      setErrors((current) => ({ ...current, vehicleColor: undefined }));
+                    }
+                  }}
+                  onBlur={() => setTouched((current) => ({ ...current, vehicleColor: true }))}
+                  aria-invalid={showFieldError('vehicleColor', vehicleColor, errors.vehicleColor)}
+                  className={inputClassName(Boolean(errors.vehicleColor))}
+                  placeholder="White"
+                />
+                {showFieldError('vehicleColor', vehicleColor, errors.vehicleColor) ? (
+                  <p className="mt-2 text-sm text-red-300">{errors.vehicleColor}</p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
         <div>
           <label className="mb-2 block text-sm font-medium text-[#CBD5E1]">Role</label>
           <select
             value={role}
-            onChange={(event) => setRole(event.target.value)}
+              onChange={(event) => {
+                const nextRole = event.target.value;
+                setRole(nextRole);
+                if (nextRole !== 'driver') {
+                  setLicenseNumber('');
+                  setVehicleNumber('');
+                  setVehicleType('');
+                  setVehicleMakeModel('');
+                  setVehicleColor('');
+                  setErrors((current) => ({
+                    ...current,
+                    licenseNumber: undefined,
+                    vehicleNumber: undefined,
+                    vehicleType: undefined,
+                    vehicleMakeModel: undefined,
+                    vehicleColor: undefined,
+                  }));
+                }
+              }}
             className="w-full rounded-2xl border border-white/10 bg-[#0F131A] px-4 py-3 text-white outline-none transition focus:border-[#3B82F6]"
           >
             <option value="rider">Rider</option>
