@@ -7,6 +7,7 @@ import { useGeolocation } from '../../hooks/useGeolocation';
 import { ROUTES } from '../../routes/routeConfig';
 import { rideApi } from '../../api/rideApi';
 import { matchingApi } from '../../api/matchingApi';
+import { paymentApi } from '../../api/paymentApi';
 
 type RiderScreen = 'home' | 'finding' | 'active' | 'completed' | 'history' | 'payment';
 
@@ -72,9 +73,9 @@ export function RiderPortal() {
         )}
         {screen === 'finding' && <FindingDriverScreen rideId={rideId} setScreen={setScreen} />}
         {screen === 'active' && <ActiveRideScreen setScreen={setScreen} />}
-        {screen === 'completed' && <CompletedScreen setScreen={setScreen} />}
+        {screen === 'completed' && <CompletedScreen setScreen={setScreen} rideId={rideId} />}
         {screen === 'history' && <HistoryScreen setScreen={setScreen} />}
-        {screen === 'payment' && <PaymentScreen setScreen={setScreen} />}
+        {screen === 'payment' && <PaymentScreen setScreen={setScreen} rideId={rideId} />}
       </div>
     </div>
   );
@@ -387,9 +388,11 @@ function ActiveRideScreen({ setScreen }: any) {
   );
 }
 
-function CompletedScreen({ setScreen }: any) {
+function CompletedScreen({ setScreen, rideId }: any) {
   const [rating, setRating] = useState(0);
   const [tip, setTip] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-[#0A0C10] z-10">
@@ -462,11 +465,27 @@ function CompletedScreen({ setScreen }: any) {
         </div>
 
         <button
-          onClick={() => setScreen('home')}
+          onClick={async () => {
+            setSaving(true);
+            setError(null);
+            try {
+              if (rideId && rating > 0) {
+                await rideApi.rate(rideId, { rating });
+              }
+              setScreen('payment');
+            } catch (e: any) {
+              const msg = e?.response?.data?.detail ?? e?.message ?? 'Failed to submit rating';
+              setError(msg);
+            } finally {
+              setSaving(false);
+            }
+          }}
           className="w-full bg-[#F5A623] hover:bg-[#F5A623]/90 text-[#0A0C10] py-4 rounded-lg font-medium"
+          disabled={saving}
         >
-          Done
+          {saving ? 'Saving...' : 'Continue To Payment'}
         </button>
+        {error && <div className="text-sm text-[#EF4444] text-center mt-3">{error}</div>}
       </div>
     </div>
   );
@@ -587,7 +606,33 @@ function HistoryScreen({ setScreen }: any) {
   );
 }
 
-function PaymentScreen({ setScreen }: any) {
+function PaymentScreen({ setScreen, rideId }: any) {
+  const [methods, setMethods] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [methodType, setMethodType] = useState<'card' | 'wallet'>('card');
+  const [tokenRef, setTokenRef] = useState('');
+  const [selectedMethodId, setSelectedMethodId] = useState<string | null>(null);
+  const totalAmount = 4.5;
+
+  const loadMethods = async () => {
+    try {
+      const { data } = await paymentApi.listMethods();
+      const list = Array.isArray(data) ? data : [];
+      setMethods(list);
+      const defaultMethod = list.find((m: any) => m.is_default);
+      if (defaultMethod) setSelectedMethodId(defaultMethod.id);
+      else if (list[0]?.id) setSelectedMethodId(list[0].id);
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail ?? e?.message ?? 'Failed to load payment methods';
+      setError(msg);
+    }
+  };
+
+  useEffect(() => {
+    loadMethods();
+  }, []);
+
   return (
     <div className="size-full bg-[#0A0C10] p-6 overflow-auto">
       <div className="max-w-4xl mx-auto">
@@ -605,20 +650,110 @@ function PaymentScreen({ setScreen }: any) {
 
         <div className="space-y-3">
           <h3 className="text-sm text-[#94A3B8] mb-3">Payment Methods</h3>
-          {['•••• 4242', '•••• 8888'].map((card, i) => (
-            <div key={i} className="bg-[#12151C] border border-[#1E2433] rounded-lg p-4 flex items-center gap-4">
+          {methods.map((method) => (
+            <div key={method.id} className="bg-[#12151C] border border-[#1E2433] rounded-lg p-4 flex items-center gap-4">
               <CreditCard className="w-6 h-6 text-[#F5A623]" />
               <div className="flex-1">
-                <div className="font-medium" style={{ fontFamily: 'var(--font-mono)' }}>{card}</div>
-                <div className="text-sm text-[#94A3B8]">Visa</div>
+                <div className="font-medium" style={{ fontFamily: 'var(--font-mono)' }}>
+                  {method.token_ref}
+                </div>
+                <div className="text-sm text-[#94A3B8]">{method.method_type}</div>
               </div>
-              <button className="text-sm text-[#F5A623]">Remove</button>
+              <button
+                onClick={() => setSelectedMethodId(method.id)}
+                className={`text-xs px-3 py-1 rounded border ${
+                  selectedMethodId === method.id
+                    ? 'border-[#F5A623] text-[#F5A623]'
+                    : 'border-[#1E2433] text-[#94A3B8]'
+                }`}
+              >
+                Select
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    await paymentApi.removeMethod(method.id);
+                    await loadMethods();
+                  } catch (e: any) {
+                    const msg = e?.response?.data?.detail ?? e?.message ?? 'Failed to remove method';
+                    setError(msg);
+                  }
+                }}
+                className="text-sm text-[#F5A623]"
+              >
+                Remove
+              </button>
             </div>
           ))}
+          <div className="bg-[#12151C] border border-[#1E2433] rounded-lg p-4 space-y-3">
+            <div className="text-sm text-[#94A3B8]">Add Payment Method</div>
+            <div className="flex gap-2">
+              <select
+                value={methodType}
+                onChange={(e) => setMethodType(e.target.value as 'card' | 'wallet')}
+                className="bg-[#1A1E28] border border-[#1E2433] rounded px-3 py-2 text-sm"
+              >
+                <option value="card">Card</option>
+                <option value="wallet">Wallet</option>
+              </select>
+              <input
+                value={tokenRef}
+                onChange={(e) => setTokenRef(e.target.value)}
+                placeholder="Token / masked number"
+                className="flex-1 bg-[#1A1E28] border border-[#1E2433] rounded px-3 py-2 text-sm"
+              />
+              <button
+                onClick={async () => {
+                  if (!tokenRef.trim()) return;
+                  try {
+                    await paymentApi.addMethod({ token: tokenRef.trim(), type: methodType });
+                    setTokenRef('');
+                    await loadMethods();
+                  } catch (e: any) {
+                    const msg = e?.response?.data?.detail ?? e?.message ?? 'Failed to add method';
+                    setError(msg);
+                  }
+                }}
+                className="px-4 py-2 bg-[#1A1E28] border border-[#1E2433] hover:border-[#F5A623] rounded text-sm"
+              >
+                Add
+              </button>
+            </div>
+          </div>
 
-          <button className="w-full bg-[#1A1E28] border border-[#1E2433] hover:border-[#F5A623] py-4 rounded-lg transition-all">
-            + Add Payment Method
+          <button
+            onClick={async () => {
+              if (!rideId || !selectedMethodId) {
+                setError('Ride ID and payment method are required');
+                return;
+              }
+              setLoading(true);
+              setError(null);
+              try {
+                const initiateRes = await paymentApi.initiate({
+                  ride_id: rideId,
+                  method_id: selectedMethodId,
+                  amount: totalAmount,
+                });
+                const paymentId = initiateRes?.data?.id;
+                if (!paymentId) {
+                  throw new Error('Payment initiation did not return a payment id');
+                }
+                await paymentApi.confirm(paymentId);
+                setScreen('home');
+              } catch (e: any) {
+                const msg = e?.response?.data?.detail ?? e?.message ?? 'Payment failed';
+                setError(msg);
+              } finally {
+                setLoading(false);
+              }
+            }}
+            disabled={loading || !rideId || !selectedMethodId}
+            className="w-full bg-[#F5A623] hover:bg-[#F5A623]/90 disabled:opacity-60 text-[#0A0C10] py-4 rounded-lg transition-all font-medium"
+          >
+            {loading ? 'Processing Payment...' : 'Pay Now'}
           </button>
+          {error && <div className="text-sm text-[#EF4444]">{error}</div>}
         </div>
       </div>
     </div>
