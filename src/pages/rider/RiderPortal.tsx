@@ -1,20 +1,31 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Gauge, Bell, User, MapPin, Search, Mic, Home, Briefcase, Ticket, CreditCard, Clock, Users, X, Star, DollarSign, History } from 'lucide-react';
+import { Gauge, Bell, User, MapPin, Search, Mic, Home, Briefcase, Ticket, CreditCard, Clock, Users, X, Star, DollarSign, History, Navigation } from 'lucide-react';
 import { MapView } from '../../components/map/RideMap';
 import { useRide } from '../../hooks/useRide';
+import { useGeolocation } from '../../hooks/useGeolocation';
 import { ROUTES } from '../../routes/routeConfig';
 import { rideApi } from '../../api/rideApi';
+import { matchingApi } from '../../api/matchingApi';
 
 type RiderScreen = 'home' | 'finding' | 'active' | 'completed' | 'history' | 'payment';
 
 export function RiderPortal() {
   const [screen, setScreen] = useState<RiderScreen>('home');
   const [pickupLocation, setPickupLocation] = useState('Current Location');
+  const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [destination, setDestination] = useState('');
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
   const { requestRide, loading, error } = useRide();
   const [rideId, setRideId] = useState<string | null>(null);
+  const { coords: geolocationCoords, error: geolocationError } = useGeolocation(false);
+
+  // Auto-set pickup from geolocation on mount
+  useEffect(() => {
+    if (geolocationCoords && !pickupCoords) {
+      setPickupCoords(geolocationCoords);
+    }
+  }, [geolocationCoords, pickupCoords]);
 
   return (
     <div className="size-full flex flex-col overflow-hidden">
@@ -25,6 +36,8 @@ export function RiderPortal() {
           <HomeScreen
             pickupLocation={pickupLocation}
             setPickupLocation={setPickupLocation}
+            pickupCoords={pickupCoords}
+            setPickupCoords={setPickupCoords}
             destination={destination}
             setDestination={setDestination}
             selectedRide={selectedRide}
@@ -32,12 +45,21 @@ export function RiderPortal() {
             setScreen={setScreen}
             onConfirmRide={async () => {
               try {
+                if (!pickupCoords) {
+                  alert('Please enable geolocation or select a pickup location');
+                  return;
+                }
                 const res = await requestRide({
                   origin: pickupLocation,
                   destination,
+                  pickup_latitude: pickupCoords.lat,
+                  pickup_longitude: pickupCoords.lng,
                 });
                 // store ride id so downstream screens can call APIs
-                if (res && (res as any).id) setRideId((res as any).id);
+                if (res && (res as any).id) {
+                  setRideId((res as any).id);
+                  await matchingApi.find((res as any).id);
+                }
                 setScreen('finding');
               } catch (e) {
                 console.error('Failed to create ride', e);
@@ -45,6 +67,7 @@ export function RiderPortal() {
             }}
             loading={loading}
             error={error}
+            geolocationError={geolocationError}
           />
         )}
         {screen === 'finding' && <FindingDriverScreen rideId={rideId} setScreen={setScreen} />}
@@ -99,7 +122,39 @@ function Header({ screen, setScreen }: { screen: RiderScreen; setScreen: (s: Rid
   );
 }
 
-function HomeScreen({ pickupLocation, setPickupLocation, destination, setDestination, selectedRide, setSelectedRide, setScreen, onConfirmRide, loading, error }: any) {
+function HomeScreen({ pickupLocation, setPickupLocation, pickupCoords, setPickupCoords, destination, setDestination, selectedRide, setSelectedRide, setScreen, onConfirmRide, loading, error, geolocationError }: any) {
+  const [showCoords, setShowCoords] = useState(false);
+  
+  const handleUseCurrentLocation = async () => {
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { 
+          enableHighAccuracy: true, 
+          timeout: 10000 
+        });
+      });
+      
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      setPickupCoords({ lat, lng });
+      
+      // Get address from coordinates
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
+          { headers: { Accept: 'application/json' } }
+        );
+        const data = await res.json();
+        setPickupLocation(data.display_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      } catch (err) {
+        setPickupLocation(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      }
+    } catch (err) {
+      alert('Unable to get current location. Please check permissions.');
+      console.error('Geolocation error:', err);
+    }
+  };
+  
   const rideOptions = [
     { id: 'ridex', name: 'RideX', subtitle: 'Standard', eta: '3 min away', price: '$4.20', seats: 4, image: '🚗' },
     { id: 'ridexl', name: 'RideXL', subtitle: 'Larger vehicle', eta: '5 min away', price: '$6.80', seats: 6, image: '🚙' },
@@ -152,7 +207,19 @@ function HomeScreen({ pickupLocation, setPickupLocation, destination, setDestina
                 placeholder="Enter pickup location"
                 className="w-full bg-transparent text-sm text-[#F1F5F9] placeholder:text-[#94A3B8] focus:outline-none"
               />
+              {pickupCoords && (
+                <div className="text-xs text-[#64748B] mt-1">
+                  📍 {pickupCoords.lat.toFixed(4)}, {pickupCoords.lng.toFixed(4)}
+                </div>
+              )}
             </div>
+            <button
+              onClick={handleUseCurrentLocation}
+              className="p-2 hover:bg-[#1E2433] rounded-lg transition-colors text-[#F5A623] flex-shrink-0"
+              title="Use current location"
+            >
+              <Navigation className="w-5 h-5" />
+            </button>
           </div>
 
           {destination && (

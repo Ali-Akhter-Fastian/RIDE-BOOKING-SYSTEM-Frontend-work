@@ -31,4 +31,7 @@ export const driverApi = {
   // GET /drivers/{id}/earnings
   earnings: (id: string, params?: { from?: string; to?: string }) =>
     client.get(`/drivers/${id}/earnings`, { params }),
+
+  // GET /api/driver/active-request
+  activeRequest: () => client.get('/api/driver/active-request'),
 };

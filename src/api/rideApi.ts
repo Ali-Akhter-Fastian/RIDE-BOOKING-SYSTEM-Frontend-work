@@ -1,14 +1,18 @@
 import { client } from './client';
+import { matchingApi } from './matchingApi';
 const API_PREFIX = '/api';
 const RIDE_PREFIX = `${API_PREFIX}/rides`;
 export const rideApi = {
   // POST /api/rides/create
-  create: (data: { origin: string; destination: string }) =>
+  create: (data: { origin: string; destination: string; pickup_latitude?: number; pickup_longitude?: number }) =>
     client.post(`${RIDE_PREFIX}/create`, data),
 
   // Backward-compatible alias for existing callers
-  request: (data: { origin: string; destination: string }) =>
+  request: (data: { origin: string; destination: string; pickup_latitude?: number; pickup_longitude?: number }) =>
     client.post(`${RIDE_PREFIX}/create`, data),
+
+  // Trigger driver assignment immediately after a ride is created.
+  findMatch: (rideId: string) => matchingApi.find(rideId),
 
   // GET /rides/{id}
   getById: (id: string) =>

@@ -3,12 +3,57 @@ import { Car, DollarSign, TrendingUp, Phone, MessageSquare, Navigation, CheckCir
 import ProfilePage from '../ProfilePage';
 import { MapView } from '../../components/map/RideMap';
 import { useDriverLocation } from '../../hooks/useDriverLocation';
+import { driverApi } from '../../api/driverApi';
+import { matchingApi } from '../../api/matchingApi';
+import { rideApi } from '../../api/rideApi';
 
 type DriverScreen = 'home' | 'incoming' | 'active' | 'earnings' | 'profile';
 
 export function DriverPortal() {
   const [screen, setScreen] = useState<DriverScreen>('home');
   const [isOnline, setIsOnline] = useState(false);
+  const [incomingRide, setIncomingRide] = useState<any>(null);
+  const [activeRide, setActiveRide] = useState<any>(null);
+  const [loadingIncomingRide, setLoadingIncomingRide] = useState(false);
+
+  useEffect(() => {
+    if (!isOnline) {
+      setIncomingRide(null);
+      setActiveRide(null);
+      setLoadingIncomingRide(false);
+      return;
+    }
+
+    if (activeRide) {
+      setLoadingIncomingRide(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadIncomingRide = async () => {
+      setLoadingIncomingRide(true);
+      try {
+        const { data } = await driverApi.activeRequest();
+        if (cancelled) return;
+
+        const ride = data?.ride ?? null;
+        setIncomingRide(ride);
+      } catch {
+        if (!cancelled) setIncomingRide(null);
+      } finally {
+        if (!cancelled) setLoadingIncomingRide(false);
+      }
+    };
+
+    loadIncomingRide();
+    const interval = window.setInterval(loadIncomingRide, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [isOnline, screen, activeRide]);
 
   return (
     <div className="size-full flex flex-col overflow-hidden">
@@ -16,10 +61,26 @@ export function DriverPortal() {
 
       <div className="flex-1 relative overflow-hidden">
         {screen === 'home' && <HomeScreen isOnline={isOnline} setIsOnline={setIsOnline} setScreen={setScreen} />}
-        {screen === 'incoming' && <IncomingRequestScreen setScreen={setScreen} />}
-        {screen === 'active' && <ActiveRideScreen setScreen={setScreen} />}
+        {screen === 'active' && (
+          <ActiveRideScreen
+            setScreen={setScreen}
+            ride={activeRide ?? incomingRide}
+            setActiveRide={setActiveRide}
+            setIncomingRide={setIncomingRide}
+          />
+        )}
         {screen === 'earnings' && <EarningsScreen setScreen={setScreen} />}
         {screen === 'profile' && <ProfileScreen setScreen={setScreen} />}
+
+        {isOnline && (incomingRide || loadingIncomingRide) && (
+          <IncomingRequestOverlay
+            setScreen={setScreen}
+            incomingRide={incomingRide}
+            loadingIncomingRide={loadingIncomingRide}
+            setIncomingRide={setIncomingRide}
+            setActiveRide={setActiveRide}
+          />
+        )}
       </div>
     </div>
   );
@@ -78,14 +139,14 @@ function HomeScreen({ isOnline, setIsOnline, setScreen }: any) {
                         // Ignore failures here; the background hook will retry while online.
                       }
                       setIsOnline(true);
-                      setTimeout(() => setScreen('incoming'), 2000);
+                      setScreen('home');
                     },
                     async () => {
                       try {
                         await driverApi.setAvailability(true);
                       } catch {}
                       setIsOnline(true);
-                      setTimeout(() => setScreen('incoming'), 2000);
+                      setScreen('home');
                     },
                     { enableHighAccuracy: true, timeout: 10000 }
                   );
@@ -100,9 +161,7 @@ function HomeScreen({ isOnline, setIsOnline, setScreen }: any) {
                   // ignore server errors — still update UI
                 }
                 setIsOnline(!isOnline);
-                if (!isOnline) {
-                  setTimeout(() => setScreen('incoming'), 2000);
-                }
+                setScreen('home');
               }}
               className={`relative w-48 h-48 mx-auto rounded-full transition-all duration-500 ${
                 isOnline
@@ -153,83 +212,107 @@ function HomeScreen({ isOnline, setIsOnline, setScreen }: any) {
   );
 }
 
-function IncomingRequestScreen({ setScreen }: any) {
-  const [countdown, setCountdown] = useState(15);
-
+function IncomingRequestOverlay({
+  setScreen,
+  incomingRide,
+  loadingIncomingRide,
+  setIncomingRide,
+  setActiveRide,
+}: any) {
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-[#0A0C10]/95 z-20 animate-in fade-in duration-300">
       <div className="bg-[#12151C] border-2 border-[#F59E0B] rounded-2xl p-8 max-w-md w-full shadow-2xl shadow-[#F59E0B]/20 animate-pulse">
         <div className="text-center mb-6">
-          <div className="relative inline-block mb-4">
-            <div className="w-24 h-24 rounded-full border-4 border-[#F59E0B] flex items-center justify-center">
-              <div className="text-3xl font-bold text-[#F59E0B]" style={{ fontFamily: 'var(--font-mono)' }}>
-                {countdown}
-              </div>
-            </div>
-            <div className="absolute inset-0 rounded-full border-4 border-[#F59E0B] animate-ping opacity-30"></div>
-          </div>
           <h2 className="text-2xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-            New Ride Request!
+            {incomingRide ? 'New Ride Request!' : 'Waiting for ride requests...'}
           </h2>
+          {loadingIncomingRide && <p className="text-[#94A3B8] text-sm">Checking for live requests...</p>}
         </div>
 
-        <div className="space-y-4 mb-6">
-          <div className="bg-[#1A1E28] rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-[#F5A623] to-[#F59E0B] rounded-full flex items-center justify-center text-sm font-bold">
-                  SM
+        {incomingRide ? (
+          <div className="space-y-4 mb-6">
+            <div className="bg-[#1A1E28] rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-[#F5A623] to-[#F59E0B] rounded-full flex items-center justify-center text-sm font-bold">
+                    {String(incomingRide.rider_id ?? 'R').slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="font-medium">Ride #{String(incomingRide.id).slice(0, 8)}</div>
+                    <div className="text-sm text-[#94A3B8] flex items-center gap-1">
+                      <Star className="w-3 h-3 fill-[#F59E0B] text-[#F59E0B]" />
+                      {incomingRide.rating ?? 'New'}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <div className="font-medium">Sara M.</div>
-                  <div className="text-sm text-[#94A3B8] flex items-center gap-1">
-                    <Star className="w-3 h-3 fill-[#F59E0B] text-[#F59E0B]" />
-                    4.6
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-[#3B82F6]" style={{ fontFamily: 'var(--font-mono)' }}>
+                    {incomingRide.fare ? `$${Number(incomingRide.fare).toFixed(2)}` : 'Pending'}
+                  </div>
+                  <div className="text-xs text-[#94A3B8]">Live request</div>
+                </div>
+              </div>
+
+              <div className="space-y-2 text-sm">
+                <div className="flex items-start gap-2">
+                  <div className="w-5 h-5 rounded-full bg-[#10B981] flex items-center justify-center text-xs mt-0.5">
+                    P
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-[#94A3B8]">Pickup</div>
+                    <div>{incomingRide.origin}</div>
+                    {incomingRide.pickup_latitude != null && incomingRide.pickup_longitude != null && (
+                      <div className="text-xs text-[#64748B] mt-1">
+                        {Number(incomingRide.pickup_latitude).toFixed(4)}, {Number(incomingRide.pickup_longitude).toFixed(4)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-5 h-5 rounded-full bg-[#EF4444] flex items-center justify-center text-xs mt-0.5">
+                    D
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-[#94A3B8]">Dropoff</div>
+                    <div>{incomingRide.destination}</div>
                   </div>
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold text-[#3B82F6]" style={{ fontFamily: 'var(--font-mono)' }}>
-                  $6.40
-                </div>
-                <div className="text-xs text-[#94A3B8]">Est. fare</div>
-              </div>
-            </div>
-
-            <div className="space-y-2 text-sm">
-              <div className="flex items-start gap-2">
-                <div className="w-5 h-5 rounded-full bg-[#10B981] flex items-center justify-center text-xs mt-0.5">
-                  P
-                </div>
-                <div className="flex-1">
-                  <div className="text-[#94A3B8]">Pickup</div>
-                  <div>Downtown Plaza • 0.8 km away</div>
-                </div>
-              </div>
-              <div className="flex items-start gap-2">
-                <div className="w-5 h-5 rounded-full bg-[#EF4444] flex items-center justify-center text-xs mt-0.5">
-                  D
-                </div>
-                <div className="flex-1">
-                  <div className="text-[#94A3B8]">Dropoff</div>
-                  <div>Airport Terminal 2 • 7.2 km trip</div>
-                </div>
-              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="space-y-4 mb-6">
+            <div className="bg-[#1A1E28] rounded-lg p-4 text-center text-[#94A3B8]">
+              {loadingIncomingRide ? 'Refreshing live request...' : 'Waiting for the assigned ride to arrive...'}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <button
-            onClick={() => setScreen('home')}
+            onClick={async () => {
+              if (incomingRide?.id && incomingRide?.driver_id) {
+                  await matchingApi.reject(incomingRide.id, incomingRide.driver_id);
+              }
+                setIncomingRide(null);
+              setScreen('home');
+            }}
             className="flex items-center justify-center gap-2 bg-[#1A1E28] hover:bg-[#EF4444]/20 border-2 border-[#EF4444] text-[#EF4444] py-4 rounded-xl font-medium transition-all"
           >
             <XCircle className="w-5 h-5" />
             DECLINE
           </button>
           <button
-            onClick={() => setScreen('active')}
+            onClick={async () => {
+                if (incomingRide?.id && incomingRide?.driver_id) {
+                  const { data } = await matchingApi.accept(incomingRide.id, incomingRide.driver_id);
+                  setActiveRide(data ?? incomingRide);
+              }
+                setIncomingRide(null);
+              setScreen('active');
+            }}
             className="flex items-center justify-center gap-2 bg-[#10B981] hover:bg-[#059669] text-white py-4 rounded-xl font-medium transition-all shadow-lg shadow-[#10B981]/30"
+            disabled={!incomingRide}
           >
             <CheckCircle className="w-5 h-5" />
             ACCEPT
@@ -239,7 +322,7 @@ function IncomingRequestScreen({ setScreen }: any) {
         <div className="mt-4 h-1 bg-[#1E2433] rounded-full overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-[#10B981] via-[#F59E0B] to-[#EF4444] transition-all duration-1000"
-            style={{ width: `${(countdown / 15) * 100}%` }}
+            style={{ width: incomingRide ? '100%' : '35%' }}
           ></div>
         </div>
       </div>
@@ -247,7 +330,7 @@ function IncomingRequestScreen({ setScreen }: any) {
   );
 }
 
-function ActiveRideScreen({ setScreen }: any) {
+function ActiveRideScreen({ setScreen, ride, setActiveRide, setIncomingRide }: any) {
   return (
     <>
       <MapView />
@@ -269,15 +352,15 @@ function ActiveRideScreen({ setScreen }: any) {
       <div className="absolute bottom-0 left-0 right-0 bg-[#12151C] border-t border-[#1E2433] p-6 z-10 shadow-2xl">
         <div className="flex items-center gap-4 mb-4">
           <div className="w-14 h-14 bg-gradient-to-br from-[#F5A623] to-[#F59E0B] rounded-full flex items-center justify-center text-lg font-bold">
-            SM
+            {String(ride?.rider_id ?? 'R').slice(0, 2).toUpperCase()}
           </div>
           <div className="flex-1">
-            <h3 className="font-medium">Sara M.</h3>
-            <p className="text-sm text-[#94A3B8]">Pickup: Downtown Plaza</p>
+            <h3 className="font-medium">{ride ? `Ride ${String(ride.id).slice(0, 8)}` : 'Active Ride'}</h3>
+            <p className="text-sm text-[#94A3B8]">Pickup: {ride?.origin ?? 'Unknown'}</p>
           </div>
           <div className="text-right">
             <div className="text-xl font-bold text-[#3B82F6]" style={{ fontFamily: 'var(--font-mono)' }}>
-              $6.40
+              {ride?.fare ? `$${Number(ride.fare).toFixed(2)}` : '—'}
             </div>
             <div className="text-xs text-[#94A3B8]">Running</div>
           </div>
@@ -295,7 +378,18 @@ function ActiveRideScreen({ setScreen }: any) {
         </div>
 
         <button
-          onClick={() => setScreen('home')}
+          onClick={async () => {
+            if (ride?.id) {
+              try {
+                await rideApi.complete(ride.id);
+              } catch {
+                // keep the UI moving even if the backend completion call fails
+              }
+            }
+            setActiveRide(null);
+            setIncomingRide(null);
+            setScreen('home');
+          }}
           className="w-full bg-[#10B981] hover:bg-[#059669] text-white py-4 rounded-lg font-medium shadow-lg"
         >
           Complete Trip

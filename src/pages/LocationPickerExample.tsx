@@ -1,5 +1,6 @@
 import { useState } from "react";
 import LocationPicker, { LocationData } from "../components/LocationPicker";
+import { tokenStorage } from "../utils/tokenStorage";
 
 /**
  * EXAMPLE: How to use LocationPicker component
@@ -26,7 +27,7 @@ export const LocationPickerExample = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("access_token")}`,
+          "Authorization": `Bearer ${tokenStorage.getAccess() ?? ""}`,
         },
         body: JSON.stringify({
           latitude: driverLocation.latitude,
@@ -59,7 +60,7 @@ export const LocationPickerExample = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("access_token")}`,
+          "Authorization": `Bearer ${tokenStorage.getAccess() ?? ""}`,
         },
         body: JSON.stringify({
           origin: riderPickup.address,
