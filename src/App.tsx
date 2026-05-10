@@ -7,13 +7,14 @@ import { ProfilePage } from './pages/ProfilePage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { RegisterPage } from './pages/auth/RegisterPage';
 import { useAuthContext } from './context/AuthContext';
+import { SocketProvider } from './context/SocketContext';
 import { ROLES } from './constants/roles';
 import { ROUTES } from './routes/routeConfig';
 
 type Portal = 'rider' | 'driver' | 'admin';
 
 function PortalShell() {
-  const { role } = useAuthContext();
+  const { role, user } = useAuthContext();
   const [activePortal, setActivePortal] = useState<Portal>('rider');
 
   useEffect(() => {
@@ -35,16 +36,21 @@ function PortalShell() {
   }
 
   return (
-    <div className="size-full flex flex-col overflow-hidden bg-[#0A0C10]">
-      {/* Portal shell chooses portal from authenticated role (no manual switcher) */}
+    <SocketProvider
+      userId={user?.id}
+      driverId={role === ROLES.DRIVER ? user?.id : undefined}
+    >
+      <div className="size-full flex flex-col overflow-hidden bg-[#0A0C10]">
+        {/* Portal shell chooses portal from authenticated role (no manual switcher) */}
 
-      {/* Active Portal */}
-      <div className="flex-1 overflow-hidden">
-        {activePortal === 'rider' && <RiderPortal />}
-        {activePortal === 'driver' && <DriverPortal />}
-        {activePortal === 'admin' && <AdminPortal />}
+        {/* Active Portal */}
+        <div className="flex-1 overflow-hidden">
+          {activePortal === 'rider' && <RiderPortal />}
+          {activePortal === 'driver' && <DriverPortal />}
+          {activePortal === 'admin' && <AdminPortal />}
+        </div>
       </div>
-    </div>
+    </SocketProvider>
   );
 }
 
