@@ -5,6 +5,7 @@ import { MapView } from '../../components/map/RideMap';
 import { useRide } from '../../hooks/useRide';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { ROUTES } from '../../routes/routeConfig';
+import { driverApi } from '../../api/driverApi';
 import { rideApi } from '../../api/rideApi';
 import { matchingApi } from '../../api/matchingApi';
 import { paymentApi } from '../../api/paymentApi';
@@ -19,6 +20,8 @@ export function RiderPortal() {
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
   const { requestRide, loading, error } = useRide();
   const [rideId, setRideId] = useState<string | null>(null);
+  const [matchedRide, setMatchedRide] = useState<any>(null);
+  const [matchedDriver, setMatchedDriver] = useState<any>(null);
   const { coords: geolocationCoords, error: geolocationError } = useGeolocation(false);
 
   // Auto-set pickup from geolocation on mount
@@ -71,9 +74,25 @@ export function RiderPortal() {
             geolocationError={geolocationError}
           />
         )}
-        {screen === 'finding' && <FindingDriverScreen rideId={rideId} setScreen={setScreen} />}
-        {screen === 'active' && <ActiveRideScreen setScreen={setScreen} />}
-        {screen === 'completed' && <CompletedScreen setScreen={setScreen} rideId={rideId} />}
+        {screen === 'finding' && (
+          <FindingDriverScreen
+            rideId={rideId}
+            setScreen={setScreen}
+            setMatchedRide={setMatchedRide}
+            setMatchedDriver={setMatchedDriver}
+          />
+        )}
+        {screen === 'active' && (
+          <ActiveRideScreen
+            setScreen={setScreen}
+            ride={matchedRide}
+            driver={matchedDriver}
+            setMatchedRide={setMatchedRide}
+          />
+        )}
+        {screen === 'completed' && (
+          <CompletedScreen setScreen={setScreen} ride={matchedRide} driver={matchedDriver} rideId={rideId} />
+        )}
         {screen === 'history' && <HistoryScreen setScreen={setScreen} />}
         {screen === 'payment' && <PaymentScreen setScreen={setScreen} rideId={rideId} />}
       </div>
@@ -277,9 +296,73 @@ function HomeScreen({ pickupLocation, setPickupLocation, pickupCoords, setPickup
   );
 }
 
-function FindingDriverScreen({ rideId, setScreen }: any) {
+function FindingDriverScreen({ rideId, setScreen, setMatchedRide, setMatchedDriver }: any) {
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [matchedStatus, setMatchedStatus] = useState<any>(null);
+  const [matchedDriverState, setMatchedDriverState] = useState<any>(null);
+  const [matchError, setMatchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!rideId) {
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId: number | undefined;
+
+    const resolveDriver = async (driverId: string) => {
+      try {
+        const { data } = await driverApi.getById(driverId);
+        if (!cancelled) {
+          setMatchedDriverState(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setMatchedDriverState({ id: driverId });
+        }
+      }
+    };
+
+    const pollMatch = async () => {
+      try {
+        const { data } = await matchingApi.status(rideId);
+        if (cancelled) return;
+
+        setMatchedStatus(data);
+        setMatchError(null);
+
+        if (data?.status === 'accepted' && data?.driver_id) {
+          await resolveDriver(data.driver_id);
+          try {
+            const { data: rideData } = await rideApi.getById(rideId);
+            if (!cancelled) {
+              setMatchedRide(rideData);
+            }
+          } catch {
+            if (!cancelled) {
+              setMatchedRide(data);
+            }
+          }
+          setScreen('active');
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setMatchError(error?.response?.data?.detail ?? error?.message ?? 'Failed to check match status');
+        }
+      }
+    };
+
+    pollMatch();
+    intervalId = window.setInterval(pollMatch, 2000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [rideId, setScreen]);
 
   const handleCancelRide = async () => {
     if (!rideId) {
@@ -309,19 +392,15 @@ function FindingDriverScreen({ rideId, setScreen }: any) {
               <div className="animate-spin w-12 h-12 border-4 border-[#F5A623] border-t-transparent rounded-full"></div>
             </div>
             <h3 className="text-xl mb-2" style={{ fontFamily: 'var(--font-display)' }}>Finding your driver...</h3>
-            <p className="text-[#94A3B8]">Estimated wait: ~2 min</p>
+            <p className="text-[#94A3B8]">{matchedStatus?.driver_id ? 'Driver found. Preparing your ride...' : 'Estimated wait: ~2 min'}</p>
           </div>
-          <button
-            onClick={() => setScreen('active')}
-            className="text-sm text-[#94A3B8] hover:text-[#F1F5F9]"
-          >
-            [Simulate: Driver Found]
-          </button>
+          <div className="text-sm text-[#94A3B8]">{matchedDriverState?.full_name ? `Matched with ${matchedDriverState.full_name}` : 'Waiting for the closest available driver'}</div>
           <div className="mt-4">
             <button onClick={handleCancelRide} className="text-sm text-[#EF4444] hover:underline" disabled={isCancelling}>
               {isCancelling ? 'Cancelling...' : 'Cancel ride'}
             </button>
             {cancelError && <div className="text-sm text-[#EF4444] mt-2">{cancelError}</div>}
+            {matchError && <div className="text-sm text-[#EF4444] mt-2">{matchError}</div>}
           </div>
         </div>
       </div>
@@ -329,23 +408,56 @@ function FindingDriverScreen({ rideId, setScreen }: any) {
   );
 }
 
-function ActiveRideScreen({ setScreen }: any) {
+function ActiveRideScreen({ setScreen, ride, driver, setMatchedRide }: any) {
+  useEffect(() => {
+    if (!ride?.id) {
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId: number | undefined;
+
+    const pollRide = async () => {
+      try {
+        const { data } = await rideApi.getById(ride.id);
+        if (cancelled) return;
+
+        setMatchedRide(data);
+        if (data?.status === 'completed') {
+          setScreen('completed');
+        }
+      } catch {
+        // keep the last known ride state on transient failures
+      }
+    };
+
+    pollRide();
+    intervalId = window.setInterval(pollRide, 2000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [ride?.id, setMatchedRide, setScreen]);
+
   return (
     <>
       <MapView />
       <div className="absolute right-6 top-6 bottom-6 w-[360px] bg-[#12151C] border border-[#1E2433] rounded-2xl p-6 z-10 space-y-6 shadow-2xl">
         <div className="flex items-center gap-4 pb-4 border-b border-[#1E2433]">
           <div className="w-16 h-16 bg-gradient-to-br from-[#F5A623] to-[#F59E0B] rounded-full flex items-center justify-center text-2xl">
-            AK
+            {String(driver?.full_name ?? 'DR').slice(0, 2).toUpperCase()}
           </div>
           <div className="flex-1">
-            <h3 className="font-medium">Ahmad K.</h3>
+            <h3 className="font-medium">{driver?.full_name ?? 'Driver assigned'}</h3>
             <div className="flex items-center gap-1 text-sm text-[#F59E0B]">
               <Star className="w-4 h-4 fill-current" />
-              <span>4.87</span>
+              <span>{driver?.rating ?? '4.87'}</span>
             </div>
-            <p className="text-sm text-[#94A3B8]">White Toyota Camry</p>
-            <p className="text-xs text-[#94A3B8]">KHI-234-AB</p>
+            <p className="text-sm text-[#94A3B8]">{driver?.vehicle_make_model ?? driver?.vehicle_type ?? 'Assigned vehicle'}</p>
+            <p className="text-xs text-[#94A3B8]">{driver?.vehicle_number ?? 'Vehicle pending'}</p>
           </div>
         </div>
 
@@ -362,7 +474,7 @@ function ActiveRideScreen({ setScreen }: any) {
 
         <div className="p-4 bg-[#1A1E28] rounded-lg">
           <div className="text-sm text-[#94A3B8] mb-1">Current Fare</div>
-          <div className="text-2xl font-medium text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>$3.40</div>
+          <div className="text-2xl font-medium text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>{ride?.fare ? `$${Number(ride.fare).toFixed(2)}` : '$3.40'}</div>
           <div className="text-xs text-[#94A3B8] mt-1">12 min remaining</div>
         </div>
 
@@ -376,10 +488,26 @@ function ActiveRideScreen({ setScreen }: any) {
         </div>
 
         <button
-          onClick={() => setScreen('completed')}
+          onClick={async () => {
+            if (!ride?.id) {
+              return;
+            }
+
+            try {
+              const latestRide = ride?.status ? ride : (await rideApi.getById(ride.id)).data;
+              if (String(latestRide?.status) === 'accepted') {
+                await rideApi.start(ride.id);
+              }
+              const { data } = await rideApi.complete(ride.id);
+              setMatchedRide(data);
+              setScreen('completed');
+            } catch {
+              // keep the UI moving even if the backend completion call fails
+            }
+          }}
           className="w-full bg-[#10B981] hover:bg-[#10B981]/90 text-white py-3 rounded-lg"
         >
-          [Simulate: Complete Ride]
+          Complete Ride
         </button>
 
         <button className="w-full text-sm text-[#EF4444] hover:underline">🚨 Emergency SOS</button>
@@ -388,7 +516,7 @@ function ActiveRideScreen({ setScreen }: any) {
   );
 }
 
-function CompletedScreen({ setScreen, rideId }: any) {
+function CompletedScreen({ setScreen, ride, driver, rideId }: any) {
   const [rating, setRating] = useState(0);
   const [tip, setTip] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -402,11 +530,11 @@ function CompletedScreen({ setScreen, rideId }: any) {
         <div className="bg-[#1A1E28] rounded-lg p-4 mb-6 space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-[#94A3B8]">Base fare</span>
-            <span style={{ fontFamily: 'var(--font-mono)' }}>$2.50</span>
+            <span style={{ fontFamily: 'var(--font-mono)' }}>{ride?.fare ? `$${Number(ride.fare).toFixed(2)}` : '$2.50'}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-[#94A3B8]">Distance</span>
-            <span style={{ fontFamily: 'var(--font-mono)' }}>$1.70</span>
+            <span style={{ fontFamily: 'var(--font-mono)' }}>{ride?.origin && ride?.destination ? 'Calculated' : '$1.70'}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-[#94A3B8]">Tax</span>
@@ -414,8 +542,14 @@ function CompletedScreen({ setScreen, rideId }: any) {
           </div>
           <div className="border-t border-[#1E2433] pt-2 flex justify-between font-medium">
             <span>Total</span>
-            <span className="text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>$4.50</span>
+            <span className="text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>{ride?.fare ? `$${Number(ride.fare).toFixed(2)}` : '$4.50'}</span>
           </div>
+        </div>
+
+        <div className="bg-[#12151C] border border-[#1E2433] rounded-lg p-4 mb-6">
+          <div className="text-sm text-[#94A3B8] mb-1">Driver</div>
+          <div className="font-medium">{driver?.full_name ?? 'Assigned driver'}</div>
+          <div className="text-sm text-[#94A3B8]">{driver?.vehicle_make_model ?? driver?.vehicle_type ?? 'Vehicle details pending'}</div>
         </div>
 
         <div className="mb-6">

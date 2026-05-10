@@ -11,10 +11,30 @@ type DriverScreen = 'home' | 'incoming' | 'active' | 'earnings' | 'profile';
 
 export function DriverPortal() {
   const [screen, setScreen] = useState<DriverScreen>('home');
-  const [isOnline, setIsOnline] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
   const [incomingRide, setIncomingRide] = useState<any>(null);
   const [activeRide, setActiveRide] = useState<any>(null);
   const [loadingIncomingRide, setLoadingIncomingRide] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const markOnline = async () => {
+      try {
+        await driverApi.setAvailability(true);
+      } catch {
+        if (!cancelled) {
+          // Keep the UI online; backend will retry via the location hook or next refresh.
+        }
+      }
+    };
+
+    markOnline();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOnline) {
@@ -38,9 +58,11 @@ export function DriverPortal() {
         if (cancelled) return;
 
         const ride = data?.ride ?? null;
-        setIncomingRide(ride);
+        setIncomingRide((currentRide: any) => ride ?? currentRide);
       } catch {
-        if (!cancelled) setIncomingRide(null);
+        if (!cancelled) {
+          setIncomingRide((currentRide: any) => currentRide);
+        }
       } finally {
         if (!cancelled) setLoadingIncomingRide(false);
       }
@@ -60,7 +82,7 @@ export function DriverPortal() {
       <Header screen={screen} setScreen={setScreen} />
 
       <div className="flex-1 relative overflow-hidden">
-        {screen === 'home' && <HomeScreen isOnline={isOnline} setIsOnline={setIsOnline} setScreen={setScreen} />}
+        {screen === 'home' && <HomeScreen isOnline={isOnline} setScreen={setScreen} />}
         {screen === 'active' && (
           <ActiveRideScreen
             setScreen={setScreen}
@@ -72,7 +94,7 @@ export function DriverPortal() {
         {screen === 'earnings' && <EarningsScreen setScreen={setScreen} />}
         {screen === 'profile' && <ProfileScreen setScreen={setScreen} />}
 
-        {isOnline && (incomingRide || loadingIncomingRide) && (
+        {isOnline && incomingRide && (
           <IncomingRequestOverlay
             setScreen={setScreen}
             incomingRide={incomingRide}
@@ -110,12 +132,14 @@ function Header({ screen, setScreen }: any) {
   );
 }
 
-function HomeScreen({ isOnline, setIsOnline, setScreen }: any) {
+function HomeScreen({ isOnline, setScreen }: any) {
   const { coords, error } = useDriverLocation(isOnline);
 
   useEffect(() => {
     if (isOnline && coords) {
-      // The hook already pings while online; this keeps the UI aware that coordinates exist.
+      driverApi.updateLocation(coords.lat, coords.lng).catch(() => {
+        // Keep the UI responsive even if location sync fails transiently.
+      });
     }
   }, [isOnline, coords]);
 
@@ -125,63 +149,19 @@ function HomeScreen({ isOnline, setIsOnline, setScreen }: any) {
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
         <div className="bg-[#12151C] border border-[#1E2433] rounded-2xl p-8 max-w-md w-full shadow-2xl pointer-events-auto">
           <div className="text-center mb-8">
-            <button
-                onClick={async () => {
-                const { driverApi } = await import('../../api/driverApi');
-                if (!isOnline && navigator.geolocation) {
-                  navigator.geolocation.getCurrentPosition(
-                    async (position) => {
-                      try {
-                        // Save immediate location and mark driver online on the server
-                        await driverApi.updateLocation(position.coords.latitude, position.coords.longitude);
-                        await driverApi.setAvailability(true);
-                      } catch {
-                        // Ignore failures here; the background hook will retry while online.
-                      }
-                      setIsOnline(true);
-                      setScreen('home');
-                    },
-                    async () => {
-                      try {
-                        await driverApi.setAvailability(true);
-                      } catch {}
-                      setIsOnline(true);
-                      setScreen('home');
-                    },
-                    { enableHighAccuracy: true, timeout: 10000 }
-                  );
-                  return;
-                }
-
-                // Going offline: set availability then clear stored locations
-                try {
-                  await driverApi.setAvailability(false);
-                  await driverApi.deleteLocations();
-                } catch {
-                  // ignore server errors — still update UI
-                }
-                setIsOnline(!isOnline);
-                setScreen('home');
-              }}
-              className={`relative w-48 h-48 mx-auto rounded-full transition-all duration-500 ${
-                isOnline
-                  ? 'bg-gradient-to-br from-[#10B981] to-[#059669] shadow-2xl shadow-[#10B981]/50'
-                  : 'bg-[#1A1E28] border-4 border-[#1E2433]'
-              }`}
+            <div
+              className={`relative w-48 h-48 mx-auto rounded-full transition-all duration-500 bg-gradient-to-br from-[#10B981] to-[#059669] shadow-2xl shadow-[#10B981]/50`}
             >
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                {isOnline && (
-                  <div className="absolute inset-0 rounded-full bg-[#10B981] opacity-30 animate-ping"></div>
-                )}
-                <div className={`text-3xl font-bold mb-2 ${isOnline ? 'text-white' : 'text-[#94A3B8]'}`} style={{ fontFamily: 'var(--font-display)' }}>
-                  {isOnline ? 'ONLINE' : 'OFFLINE'}
+                <div className="text-3xl font-bold mb-2 text-white" style={{ fontFamily: 'var(--font-display)' }}>
+                  ONLINE
                 </div>
-                <div className={`text-sm ${isOnline ? 'text-white/80' : 'text-[#94A3B8]'}`}>
-                  {isOnline ? 'Ready for rides' : 'Tap to go online'}
+                <div className="text-sm text-white/80">
+                  Ready for rides
                 </div>
                 {error ? <div className="mt-2 text-xs text-red-300">{error}</div> : null}
               </div>
-            </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -199,13 +179,11 @@ function HomeScreen({ isOnline, setIsOnline, setScreen }: any) {
             </div>
           </div>
 
-          {isOnline && (
-            <div className="mt-4 p-4 bg-gradient-to-r from-[#3B82F6]/20 to-[#8B5CF6]/20 border border-[#3B82F6]/30 rounded-xl">
-              <div className="text-sm text-[#3B82F6] font-medium">
-                🎯 Complete 3 more rides for a $5 bonus!
-              </div>
+          <div className="mt-4 p-4 bg-gradient-to-r from-[#3B82F6]/20 to-[#8B5CF6]/20 border border-[#3B82F6]/30 rounded-xl">
+            <div className="text-sm text-[#3B82F6] font-medium">
+              🎯 Complete 3 more rides for a $5 bonus!
             </div>
-          )}
+          </div>
         </div>
       </div>
     </>
@@ -220,8 +198,8 @@ function IncomingRequestOverlay({
   setActiveRide,
 }: any) {
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-[#0A0C10]/95 z-20 animate-in fade-in duration-300">
-      <div className="bg-[#12151C] border-2 border-[#F59E0B] rounded-2xl p-8 max-w-md w-full shadow-2xl shadow-[#F59E0B]/20 animate-pulse">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A0C10]/95">
+      <div className="bg-[#12151C] border-2 border-[#F59E0B] rounded-2xl p-8 max-w-md w-full shadow-2xl shadow-[#F59E0B]/20">
         <div className="text-center mb-6">
           <h2 className="text-2xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
             {incomingRide ? 'New Ride Request!' : 'Waiting for ride requests...'}
@@ -379,16 +357,26 @@ function ActiveRideScreen({ setScreen, ride, setActiveRide, setIncomingRide }: a
 
         <button
           onClick={async () => {
-            if (ride?.id) {
-              try {
-                await rideApi.complete(ride.id);
-              } catch {
-                // keep the UI moving even if the backend completion call fails
-              }
+            if (!ride?.id) {
+              setActiveRide(null);
+              setIncomingRide(null);
+              setScreen('home');
+              return;
             }
-            setActiveRide(null);
-            setIncomingRide(null);
-            setScreen('home');
+
+            try {
+              const latestRide = ride?.status ? ride : (await rideApi.getById(ride.id)).data;
+              if (String(latestRide?.status) === 'accepted') {
+                await rideApi.start(ride.id);
+              }
+              await rideApi.complete(ride.id);
+            } catch {
+              // keep the UI moving even if the backend completion call fails
+            } finally {
+              setActiveRide(null);
+              setIncomingRide(null);
+              setScreen('home');
+            }
           }}
           className="w-full bg-[#10B981] hover:bg-[#059669] text-white py-4 rounded-lg font-medium shadow-lg"
         >
