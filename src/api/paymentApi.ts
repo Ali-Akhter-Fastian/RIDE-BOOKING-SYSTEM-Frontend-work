@@ -4,7 +4,7 @@ const PAYMENTS_PREFIX = '/api/payments';
 
 export const paymentApi = {
   // POST /payments/initiate — uses surge fare from Workflow B
-  initiate: (data: { ride_id: string; method_id: string; amount: number }) =>
+  initiate: (data: { ride_id: string; payment_method: string; amount: number }) =>
     client.post(`${PAYMENTS_PREFIX}/initiate`, data),
 
   // POST /payments/confirm — triggers Workflow C receipt dispatch

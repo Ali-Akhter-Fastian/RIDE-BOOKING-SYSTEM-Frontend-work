@@ -461,16 +461,6 @@ function ActiveRideScreen({ setScreen, ride, driver, setMatchedRide }: any) {
           </div>
         </div>
 
-        <div className="space-y-3">
-          {['Accepted', 'En Route', 'Arrived', 'In Ride'].map((status, i) => (
-            <div key={status} className="flex items-center gap-3">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center ${i < 2 ? 'bg-[#10B981]' : 'bg-[#1E2433]'}`}>
-                {i < 2 && <span className="text-xs">✓</span>}
-              </div>
-              <span className={i < 2 ? 'text-[#F1F5F9]' : 'text-[#94A3B8]'}>{status}</span>
-            </div>
-          ))}
-        </div>
 
         <div className="p-4 bg-[#1A1E28] rounded-lg">
           <div className="text-sm text-[#94A3B8] mb-1">Current Fare</div>
@@ -478,39 +468,10 @@ function ActiveRideScreen({ setScreen, ride, driver, setMatchedRide }: any) {
           <div className="text-xs text-[#94A3B8] mt-1">12 min remaining</div>
         </div>
 
-        <div className="flex gap-3">
-          <button className="flex-1 bg-[#1A1E28] hover:bg-[#1E2433] border border-[#1E2433] py-3 rounded-lg">
-            📞 Call
-          </button>
-          <button className="flex-1 bg-[#1A1E28] hover:bg-[#1E2433] border border-[#1E2433] py-3 rounded-lg">
-            💬 Chat
-          </button>
-        </div>
+      
+      
 
-        <button
-          onClick={async () => {
-            if (!ride?.id) {
-              return;
-            }
-
-            try {
-              const latestRide = ride?.status ? ride : (await rideApi.getById(ride.id)).data;
-              if (String(latestRide?.status) === 'accepted') {
-                await rideApi.start(ride.id);
-              }
-              const { data } = await rideApi.complete(ride.id);
-              setMatchedRide(data);
-              setScreen('completed');
-            } catch {
-              // keep the UI moving even if the backend completion call fails
-            }
-          }}
-          className="w-full bg-[#10B981] hover:bg-[#10B981]/90 text-white py-3 rounded-lg"
-        >
-          Complete Ride
-        </button>
-
-        <button className="w-full text-sm text-[#EF4444] hover:underline">🚨 Emergency SOS</button>
+       
       </div>
     </>
   );
@@ -747,6 +708,7 @@ function PaymentScreen({ setScreen, rideId }: any) {
   const [methodType, setMethodType] = useState<'card' | 'wallet'>('card');
   const [tokenRef, setTokenRef] = useState('');
   const [selectedMethodId, setSelectedMethodId] = useState<string | null>(null);
+  const [selectedMethodType, setSelectedMethodType] = useState<'card' | 'wallet' | 'cash'>('cash');
   const totalAmount = 4.5;
 
   const loadMethods = async () => {
@@ -755,8 +717,13 @@ function PaymentScreen({ setScreen, rideId }: any) {
       const list = Array.isArray(data) ? data : [];
       setMethods(list);
       const defaultMethod = list.find((m: any) => m.is_default);
-      if (defaultMethod) setSelectedMethodId(defaultMethod.id);
-      else if (list[0]?.id) setSelectedMethodId(list[0].id);
+      if (defaultMethod) {
+        setSelectedMethodId(defaultMethod.id);
+        setSelectedMethodType(defaultMethod.method_type ?? 'cash');
+      } else if (list[0]?.id) {
+        setSelectedMethodId(list[0].id);
+        setSelectedMethodType(list[0].method_type ?? 'cash');
+      }
     } catch (e: any) {
       const msg = e?.response?.data?.detail ?? e?.message ?? 'Failed to load payment methods';
       setError(msg);
@@ -794,7 +761,10 @@ function PaymentScreen({ setScreen, rideId }: any) {
                 <div className="text-sm text-[#94A3B8]">{method.method_type}</div>
               </div>
               <button
-                onClick={() => setSelectedMethodId(method.id)}
+                onClick={() => {
+                  setSelectedMethodId(method.id);
+                  setSelectedMethodType(method.method_type ?? 'cash');
+                }}
                 className={`text-xs px-3 py-1 rounded border ${
                   selectedMethodId === method.id
                     ? 'border-[#F5A623] text-[#F5A623]'
@@ -824,7 +794,11 @@ function PaymentScreen({ setScreen, rideId }: any) {
             <div className="flex gap-2">
               <select
                 value={methodType}
-                onChange={(e) => setMethodType(e.target.value as 'card' | 'wallet')}
+                onChange={(e) => {
+                  const nextType = e.target.value as 'card' | 'wallet';
+                  setMethodType(nextType);
+                  setSelectedMethodType(nextType);
+                }}
                 className="bg-[#1A1E28] border border-[#1E2433] rounded px-3 py-2 text-sm"
               >
                 <option value="card">Card</option>
@@ -857,8 +831,8 @@ function PaymentScreen({ setScreen, rideId }: any) {
 
           <button
             onClick={async () => {
-              if (!rideId || !selectedMethodId) {
-                setError('Ride ID and payment method are required');
+              if (!rideId) {
+                setError('Ride ID is required');
                 return;
               }
               setLoading(true);
@@ -866,7 +840,7 @@ function PaymentScreen({ setScreen, rideId }: any) {
               try {
                 const initiateRes = await paymentApi.initiate({
                   ride_id: rideId,
-                  method_id: selectedMethodId,
+                  payment_method: selectedMethodType,
                   amount: totalAmount,
                 });
                 const paymentId = initiateRes?.data?.id;
@@ -882,7 +856,7 @@ function PaymentScreen({ setScreen, rideId }: any) {
                 setLoading(false);
               }
             }}
-            disabled={loading || !rideId || !selectedMethodId}
+            disabled={loading || !rideId}
             className="w-full bg-[#F5A623] hover:bg-[#F5A623]/90 disabled:opacity-60 text-[#0A0C10] py-4 rounded-lg transition-all font-medium"
           >
             {loading ? 'Processing Payment...' : 'Pay Now'}

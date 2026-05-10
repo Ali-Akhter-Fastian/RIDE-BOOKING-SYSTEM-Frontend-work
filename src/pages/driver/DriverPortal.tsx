@@ -213,10 +213,13 @@ function IncomingRequestOverlay({
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-gradient-to-br from-[#F5A623] to-[#F59E0B] rounded-full flex items-center justify-center text-sm font-bold">
-                    {String(incomingRide.rider_id ?? 'R').slice(0, 2).toUpperCase()}
+                    {String(incomingRide?.rider_full_name
+                      ? String(incomingRide.rider_full_name).slice(0, 2)
+                      : (incomingRide.rider_id ?? 'R')).slice(0, 2).toUpperCase()}
                   </div>
                   <div>
                     <div className="font-medium">Ride #{String(incomingRide.id).slice(0, 8)}</div>
+                    <div className="text-sm text-[#94A3B8]">{incomingRide?.rider_full_name ?? 'Rider'}</div>
                     <div className="text-sm text-[#94A3B8] flex items-center gap-1">
                       <Star className="w-3 h-3 fill-[#F59E0B] text-[#F59E0B]" />
                       {incomingRide.rating ?? 'New'}
@@ -330,10 +333,12 @@ function ActiveRideScreen({ setScreen, ride, setActiveRide, setIncomingRide }: a
       <div className="absolute bottom-0 left-0 right-0 bg-[#12151C] border-t border-[#1E2433] p-6 z-10 shadow-2xl">
         <div className="flex items-center gap-4 mb-4">
           <div className="w-14 h-14 bg-gradient-to-br from-[#F5A623] to-[#F59E0B] rounded-full flex items-center justify-center text-lg font-bold">
-            {String(ride?.rider_id ?? 'R').slice(0, 2).toUpperCase()}
+            {String(ride?.rider_full_name
+              ? String(ride.rider_full_name).slice(0, 2)
+              : (ride?.rider_id ?? 'R')).slice(0, 2).toUpperCase()}
           </div>
           <div className="flex-1">
-            <h3 className="font-medium">{ride ? `Ride ${String(ride.id).slice(0, 8)}` : 'Active Ride'}</h3>
+            <h3 className="font-medium">{ride ? (ride.rider_full_name ? ride.rider_full_name : `Ride ${String(ride.id).slice(0, 8)}`) : 'Active Ride'}</h3>
             <p className="text-sm text-[#94A3B8]">Pickup: {ride?.origin ?? 'Unknown'}</p>
           </div>
           <div className="text-right">
