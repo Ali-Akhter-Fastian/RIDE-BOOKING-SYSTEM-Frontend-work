@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { useSocketContext } from '../../context/SocketContext';
 import { Car, DollarSign, TrendingUp, Phone, MessageSquare, Navigation, CheckCircle, XCircle, Clock, Star, User, FileText } from 'lucide-react';
 import ProfilePage from '../ProfilePage';
 import { MapView } from '../../components/map/RideMap';
@@ -15,6 +16,7 @@ export function DriverPortal() {
   const [incomingRide, setIncomingRide] = useState<any>(null);
   const [activeRide, setActiveRide] = useState<any>(null);
   const [loadingIncomingRide, setLoadingIncomingRide] = useState(false);
+  const { driverSocket } = useSocketContext();
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +79,20 @@ export function DriverPortal() {
     };
   }, [isOnline, screen, activeRide]);
 
+  // Subscribe to ride offers via WebSocket (if connected)
+  useEffect(() => {
+    if (!driverSocket) return;
+
+    const unsub = driverSocket.onRideOffer((data: any) => {
+      // When a ride offer arrives via websocket, show the incoming overlay
+      setIncomingRide(data ?? null);
+    });
+
+    return () => {
+      unsub?.();
+    };
+  }, [driverSocket]);
+
   return (
     <div className="size-full flex flex-col overflow-hidden">
       <Header screen={screen} setScreen={setScreen} />
@@ -135,12 +151,75 @@ function Header({ screen, setScreen }: any) {
 function HomeScreen({ isOnline, setScreen }: any) {
   const { coords, error } = useDriverLocation(isOnline);
 
+  const lastSentRef = useRef<number>(0);
+  const prevCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+  const sendTimerRef = useRef<number | null>(null);
+
+  // Haversine distance (meters)
+  const distanceMeters = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+    const toRad = (v: number) => (v * Math.PI) / 180;
+    const R = 6371000; // Earth radius in meters
+    const dLat = toRad(b.lat - a.lat);
+    const dLon = toRad(b.lng - a.lng);
+    const lat1 = toRad(a.lat);
+    const lat2 = toRad(b.lat);
+    const sinDLat = Math.sin(dLat / 2);
+    const sinDLon = Math.sin(dLon / 2);
+    const val = sinDLat * sinDLat + sinDLon * sinDLon * Math.cos(lat1) * Math.cos(lat2);
+    const c = 2 * Math.atan2(Math.sqrt(val), Math.sqrt(1 - val));
+    return R * c;
+  };
+
   useEffect(() => {
-    if (isOnline && coords) {
-      driverApi.updateLocation(coords.lat, coords.lng).catch(() => {
-        // Keep the UI responsive even if location sync fails transiently.
-      });
+    const MIN_INTERVAL = 3000; // ms
+    const MIN_DISTANCE = 20; // meters
+
+    if (!isOnline || !coords) return;
+
+    const current = { lat: coords.lat, lng: coords.lng };
+    const now = Date.now();
+    const last = lastSentRef.current || 0;
+    const prev = prevCoordsRef.current;
+
+    const shouldSendByTime = now - last >= MIN_INTERVAL;
+    const shouldSendByDistance = prev ? distanceMeters(prev, current) >= MIN_DISTANCE : true;
+
+    const send = async () => {
+      try {
+        await driverApi.updateLocation(current.lat, current.lng);
+        lastSentRef.current = Date.now();
+        prevCoordsRef.current = current;
+      } catch {
+        // transient errors are ignored; will retry on next update
+      }
+    };
+
+    if (shouldSendByTime || shouldSendByDistance) {
+      // Clear any scheduled sends
+      if (sendTimerRef.current) {
+        window.clearTimeout(sendTimerRef.current);
+        sendTimerRef.current = null;
+      }
+      send();
+      return;
     }
+
+    // Otherwise schedule a send to happen after remaining interval
+    const wait = Math.max(0, MIN_INTERVAL - (now - last));
+    if (sendTimerRef.current) {
+      window.clearTimeout(sendTimerRef.current);
+    }
+    sendTimerRef.current = window.setTimeout(() => {
+      send();
+      sendTimerRef.current = null;
+    }, wait);
+
+    return () => {
+      if (sendTimerRef.current) {
+        window.clearTimeout(sendTimerRef.current);
+        sendTimerRef.current = null;
+      }
+    };
   }, [isOnline, coords]);
 
   return (
