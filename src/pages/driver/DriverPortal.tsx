@@ -675,5 +675,5 @@ function EarningsScreen({ setScreen, dashboard, dashboardLoading, dashboardError
 
 function ProfileScreen({ setScreen }: any) {
   // Reuse the shared ProfilePage so drivers see the same account UI as riders.
-  return <ProfilePage />;
+  return <ProfilePage onBackHome={() => setScreen('home')} />;
 }

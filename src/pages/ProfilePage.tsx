@@ -14,7 +14,11 @@ interface UserProfile {
   updated_at: string;
 }
 
-export function ProfilePage() {
+interface ProfilePageProps {
+  onBackHome?: () => void;
+}
+
+export function ProfilePage({ onBackHome }: ProfilePageProps = {}) {
   const navigate = useNavigate();
   const { logout, isAuthenticated } = useAuthContext();
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -62,6 +66,10 @@ export function ProfilePage() {
   };
 
   const handleBackHome = () => {
+    if (onBackHome) {
+      onBackHome();
+      return;
+    }
     navigate(ROUTES.APP_HOME, { replace: true });
   };
 

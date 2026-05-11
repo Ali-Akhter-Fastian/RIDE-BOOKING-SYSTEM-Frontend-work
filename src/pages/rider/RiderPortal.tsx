@@ -562,35 +562,6 @@ function CompletedScreen({ setScreen, ride, driver, rideId }: any) {
           </div>
         </div>
 
-        <div className="mb-6">
-          <p className="text-center text-sm text-[#94A3B8] mb-3">Add a tip?</p>
-          <div className="grid grid-cols-4 gap-2">
-            {[1, 2, 5].map((amount) => (
-              <button
-                key={amount}
-                onClick={() => setTip(amount)}
-                className={`py-2 rounded-lg border transition-all ${
-                  tip === amount
-                    ? 'bg-[#F5A623] border-[#F5A623] text-[#0A0C10]'
-                    : 'bg-[#1A1E28] border-[#1E2433]'
-                }`}
-              >
-                ${amount}
-              </button>
-            ))}
-            <button
-              onClick={() => setTip(0)}
-              className={`py-2 rounded-lg border text-sm transition-all ${
-                tip === 0
-                  ? 'bg-[#F5A623] border-[#F5A623] text-[#0A0C10]'
-                  : 'bg-[#1A1E28] border-[#1E2433]'
-              }`}
-            >
-              Custom
-            </button>
-          </div>
-        </div>
-
         <button
           onClick={async () => {
             setSaving(true);
