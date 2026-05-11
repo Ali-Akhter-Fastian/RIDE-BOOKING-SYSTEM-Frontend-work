@@ -10,6 +10,12 @@ import { rideApi } from '../../api/rideApi';
 import { matchingApi } from '../../api/matchingApi';
 import { paymentApi } from '../../api/paymentApi';
 
+const RIDE_TYPE_PRICING: Record<string, { name: string; subtitle: string; eta: string; price: number; seats: number; image: string }> = {
+  ridex: { name: 'RideX', subtitle: 'Standard', eta: '3 min away', price: 4.2, seats: 4, image: '🚗' },
+  ridexl: { name: 'RideXL', subtitle: 'Larger vehicle', eta: '5 min away', price: 6.8, seats: 6, image: '🚙' },
+  comfort: { name: 'Comfort', subtitle: 'Premium ride', eta: '8 min away', price: 9.5, seats: 4, image: '✨' },
+};
+
 type RiderScreen = 'home' | 'finding' | 'active' | 'completed' | 'history' | 'payment';
 
 export function RiderPortal() {
@@ -56,6 +62,7 @@ export function RiderPortal() {
                 const res = await requestRide({
                   origin: pickupLocation,
                   destination,
+                  ride_type: selectedRide ?? 'ridex',
                   pickup_latitude: pickupCoords.lat,
                   pickup_longitude: pickupCoords.lng,
                 });
@@ -94,7 +101,14 @@ export function RiderPortal() {
           <CompletedScreen setScreen={setScreen} ride={matchedRide} driver={matchedDriver} rideId={rideId} />
         )}
         {screen === 'history' && <HistoryScreen setScreen={setScreen} />}
-        {screen === 'payment' && <PaymentScreen setScreen={setScreen} rideId={rideId} />}
+        {screen === 'payment' && (
+          <PaymentScreen
+            setScreen={setScreen}
+            rideId={rideId}
+            ride={matchedRide}
+            selectedRideType={selectedRide}
+          />
+        )}
       </div>
     </div>
   );
@@ -176,9 +190,9 @@ function HomeScreen({ pickupLocation, setPickupLocation, pickupCoords, setPickup
   };
   
   const rideOptions = [
-    { id: 'ridex', name: 'RideX', subtitle: 'Standard', eta: '3 min away', price: '$4.20', seats: 4, image: '🚗' },
-    { id: 'ridexl', name: 'RideXL', subtitle: 'Larger vehicle', eta: '5 min away', price: '$6.80', seats: 6, image: '🚙' },
-    { id: 'comfort', name: 'Comfort', subtitle: 'Premium ride', eta: '8 min away', price: '$9.50', seats: 4, image: '✨' },
+    { id: 'ridex', ...RIDE_TYPE_PRICING.ridex },
+    { id: 'ridexl', ...RIDE_TYPE_PRICING.ridexl },
+    { id: 'comfort', ...RIDE_TYPE_PRICING.comfort },
   ];
 
   const selectedOption = rideOptions.find(r => r.id === selectedRide);
@@ -264,7 +278,7 @@ function HomeScreen({ pickupLocation, setPickupLocation, pickupCoords, setPickup
                       </div>
                     </div>
                     <div className="text-lg font-medium text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>
-                      {option.price}
+                      ${option.price.toFixed(2)}
                     </div>
                   </button>
                 ))}
@@ -464,7 +478,7 @@ function ActiveRideScreen({ setScreen, ride, driver, setMatchedRide }: any) {
 
         <div className="p-4 bg-[#1A1E28] rounded-lg">
           <div className="text-sm text-[#94A3B8] mb-1">Current Fare</div>
-          <div className="text-2xl font-medium text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>{ride?.fare ? `$${Number(ride.fare).toFixed(2)}` : '$3.40'}</div>
+          <div className="text-2xl font-medium text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>{ride?.fare ? `$${Number(ride.fare).toFixed(2)}` : 'Loading fare...'}</div>
           <div className="text-xs text-[#94A3B8] mt-1">12 min remaining</div>
         </div>
 
@@ -491,7 +505,7 @@ function CompletedScreen({ setScreen, ride, driver, rideId }: any) {
         <div className="bg-[#1A1E28] rounded-lg p-4 mb-6 space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-[#94A3B8]">Base fare</span>
-            <span style={{ fontFamily: 'var(--font-mono)' }}>{ride?.fare ? `$${Number(ride.fare).toFixed(2)}` : '$2.50'}</span>
+            <span style={{ fontFamily: 'var(--font-mono)' }}>{ride?.fare ? `$${Number(ride.fare).toFixed(2)}` : 'Loading fare...'}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-[#94A3B8]">Distance</span>
@@ -503,7 +517,7 @@ function CompletedScreen({ setScreen, ride, driver, rideId }: any) {
           </div>
           <div className="border-t border-[#1E2433] pt-2 flex justify-between font-medium">
             <span>Total</span>
-            <span className="text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>{ride?.fare ? `$${Number(ride.fare).toFixed(2)}` : '$4.50'}</span>
+            <span className="text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>{ride?.fare ? `$${Number(ride.fare).toFixed(2)}` : 'Loading fare...'}</span>
           </div>
         </div>
 
@@ -701,7 +715,7 @@ function HistoryScreen({ setScreen }: any) {
   );
 }
 
-function PaymentScreen({ setScreen, rideId }: any) {
+function PaymentScreen({ setScreen, rideId, ride, selectedRideType }: any) {
   const [methods, setMethods] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -709,7 +723,12 @@ function PaymentScreen({ setScreen, rideId }: any) {
   const [tokenRef, setTokenRef] = useState('');
   const [selectedMethodId, setSelectedMethodId] = useState<string | null>(null);
   const [selectedMethodType, setSelectedMethodType] = useState<'card' | 'wallet' | 'cash'>('cash');
-  const totalAmount = 4.5;
+  const [rideData, setRideData] = useState<any>(ride ?? null);
+  const selectedRideTypeKey = String(selectedRideType ?? '').toLowerCase();
+  const selectedRideTypePrice = selectedRideTypeKey ? RIDE_TYPE_PRICING[selectedRideTypeKey]?.price ?? null : null;
+  const rideTypeKey = String(rideData?.ride_type ?? '').toLowerCase();
+  const rideTypePrice = rideTypeKey ? RIDE_TYPE_PRICING[rideTypeKey]?.price ?? null : null;
+  const totalAmount = rideData?.fare != null ? Number(rideData.fare) : (rideTypePrice ?? selectedRideTypePrice);
 
   const loadMethods = async () => {
     try {
@@ -734,6 +753,46 @@ function PaymentScreen({ setScreen, rideId }: any) {
     loadMethods();
   }, []);
 
+  useEffect(() => {
+    if (ride) {
+      setRideData(ride);
+    }
+  }, [ride]);
+
+  useEffect(() => {
+    if (rideData?.fare != null || rideData?.ride_type) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadRide = async () => {
+      if (!rideId) {
+        return;
+      }
+
+      try {
+        const { data } = await rideApi.getById(rideId);
+        if (!cancelled) {
+          setRideData(data);
+          if (data?.fare == null && !data?.ride_type) {
+            setError('Ride fare is unavailable for this trip');
+          }
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError((prev) => prev ?? 'Failed to load ride details');
+        }
+      }
+    };
+
+    loadRide();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rideData, rideId]);
+
   return (
     <div className="size-full bg-[#0A0C10] p-6 overflow-auto">
       <div className="max-w-4xl mx-auto">
@@ -746,7 +805,9 @@ function PaymentScreen({ setScreen, rideId }: any) {
 
         <div className="bg-gradient-to-br from-[#F5A623] to-[#F59E0B] rounded-xl p-6 mb-6 shadow-lg">
           <div className="text-[#0A0C10] text-sm mb-2">RideFlow Credits</div>
-          <div className="text-[#0A0C10] text-3xl font-bold" style={{ fontFamily: 'var(--font-mono)' }}>$12.50</div>
+          <div className="text-[#0A0C10] text-3xl font-bold" style={{ fontFamily: 'var(--font-mono)' }}>
+            {totalAmount !== null ? `$${totalAmount.toFixed(2)}` : '$--.--'}
+          </div>
         </div>
 
         <div className="space-y-3">
@@ -841,7 +902,7 @@ function PaymentScreen({ setScreen, rideId }: any) {
                 const initiateRes = await paymentApi.initiate({
                   ride_id: rideId,
                   payment_method: selectedMethodType,
-                  amount: totalAmount,
+                  amount: totalAmount ?? 0,
                 });
                 const paymentId = initiateRes?.data?.id;
                 if (!paymentId) {
@@ -856,10 +917,10 @@ function PaymentScreen({ setScreen, rideId }: any) {
                 setLoading(false);
               }
             }}
-            disabled={loading || !rideId}
+            disabled={loading || !rideId || totalAmount === null}
             className="w-full bg-[#F5A623] hover:bg-[#F5A623]/90 disabled:opacity-60 text-[#0A0C10] py-4 rounded-lg transition-all font-medium"
           >
-            {loading ? 'Processing Payment...' : 'Pay Now'}
+            {loading ? 'Processing Payment...' : totalAmount !== null ? `Pay Now • $${totalAmount.toFixed(2)}` : 'Loading fare...'}
           </button>
           {error && <div className="text-sm text-[#EF4444]">{error}</div>}
         </div>

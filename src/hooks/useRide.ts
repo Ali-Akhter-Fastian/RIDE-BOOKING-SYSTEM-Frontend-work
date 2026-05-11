@@ -6,7 +6,7 @@ export function useRide() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const requestRide = useCallback(async (payload: { origin: string; destination: string; pickup_latitude?: number; pickup_longitude?: number }) => {
+  const requestRide = useCallback(async (payload: { origin: string; destination: string; ride_type?: string; pickup_latitude?: number; pickup_longitude?: number }) => {
     setLoading(true);
     setError(null);
     try {

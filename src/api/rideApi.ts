@@ -4,11 +4,11 @@ const API_PREFIX = '/api';
 const RIDE_PREFIX = `${API_PREFIX}/rides`;
 export const rideApi = {
   // POST /api/rides/create
-  create: (data: { origin: string; destination: string; pickup_latitude?: number; pickup_longitude?: number }) =>
+  create: (data: { origin: string; destination: string; ride_type?: string; pickup_latitude?: number; pickup_longitude?: number }) =>
     client.post(`${RIDE_PREFIX}/create`, data),
 
   // Backward-compatible alias for existing callers
-  request: (data: { origin: string; destination: string; pickup_latitude?: number; pickup_longitude?: number }) =>
+  request: (data: { origin: string; destination: string; ride_type?: string; pickup_latitude?: number; pickup_longitude?: number }) =>
     client.post(`${RIDE_PREFIX}/create`, data),
 
   // Trigger driver assignment immediately after a ride is created.
