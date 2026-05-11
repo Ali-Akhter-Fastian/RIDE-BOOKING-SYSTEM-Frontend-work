@@ -141,6 +141,12 @@ function Header({ screen, setScreen }: { screen: RiderScreen; setScreen: (s: Rid
 
       <div className="flex items-center gap-4">
         <button
+          onClick={() => setScreen('history')}
+          className="p-2 hover:bg-[#1A1E28] rounded-lg transition-colors"
+        >
+          <History className="w-5 h-5 text-[#94A3B8]" />
+        </button>
+        <button
           onClick={() => navigate(ROUTES.PROFILE)}
           className="flex items-center gap-2 p-2 hover:bg-[#1A1E28] rounded-lg transition-colors"
         >
