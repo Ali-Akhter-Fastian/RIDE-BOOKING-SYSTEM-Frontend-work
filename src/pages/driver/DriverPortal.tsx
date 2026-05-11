@@ -7,8 +7,25 @@ import { useDriverLocation } from '../../hooks/useDriverLocation';
 import { driverApi } from '../../api/driverApi';
 import { matchingApi } from '../../api/matchingApi';
 import { rideApi } from '../../api/rideApi';
+import { useAuthContext } from '../../context/AuthContext';
 
 type DriverScreen = 'home' | 'incoming' | 'active' | 'earnings' | 'profile';
+
+type DriverDashboard = {
+  todayEarnings: number;
+  ridesToday: number;
+  bonusRemaining: number;
+  totalEarnings: number;
+  totalTrips: number;
+  averageFare: number;
+  recentTrips: Array<{
+    id: string;
+    time: string;
+    route: string;
+    fare: number;
+    rating: number | null;
+  }>;
+};
 
 export function DriverPortal() {
   const [screen, setScreen] = useState<DriverScreen>('home');
@@ -16,7 +33,101 @@ export function DriverPortal() {
   const [incomingRide, setIncomingRide] = useState<any>(null);
   const [activeRide, setActiveRide] = useState<any>(null);
   const [loadingIncomingRide, setLoadingIncomingRide] = useState(false);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<DriverDashboard>({
+    todayEarnings: 0,
+    ridesToday: 0,
+    bonusRemaining: 3,
+    totalEarnings: 0,
+    totalTrips: 0,
+    averageFare: 0,
+    recentTrips: [],
+  });
   const { driverSocket } = useSocketContext();
+  const { user } = useAuthContext();
+
+  const startOfDayIso = () => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    return start.toISOString();
+  };
+
+  const todayDateKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
+  const refreshDashboard = async () => {
+    if (!user?.id) return;
+
+    setDashboardLoading(true);
+    setDashboardError(null);
+
+    try {
+      const nowIso = new Date().toISOString();
+      const fromIso = startOfDayIso();
+
+      const [overallRes, todayRes, historyRes] = await Promise.all([
+        driverApi.earnings(user.id),
+        driverApi.earnings(user.id, { from: fromIso, to: nowIso }),
+        rideApi.history({ page: 1, page_size: 100 }),
+      ]);
+
+      const overall = overallRes?.data ?? {};
+      const todaySummary = todayRes?.data ?? {};
+      const history = historyRes?.data?.rides ?? [];
+
+      const now = new Date();
+      const todayKey = todayDateKey(now);
+      const todaysTrips = Array.isArray(history)
+        ? history.filter((trip: any) => {
+            const createdAt = trip?.created_at ? new Date(trip.created_at) : null;
+            if (!createdAt || Number.isNaN(createdAt.getTime())) return false;
+            return todayDateKey(createdAt) === todayKey && String(trip?.status ?? '').toLowerCase() === 'completed';
+          })
+        : [];
+
+      const recentTrips = todaysTrips
+        .slice()
+        .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 8)
+        .map((trip: any) => ({
+          id: String(trip.id),
+          time: new Date(trip.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          route: `${trip.origin} -> ${trip.destination}`,
+          fare: Number(trip.fare ?? 0),
+          rating: trip.rating == null ? null : Number(trip.rating),
+        }));
+
+      const ridesToday = Number(todaySummary.completed_rides ?? todaysTrips.length ?? 0);
+      const bonusTarget = 3;
+
+      setDashboard({
+        todayEarnings: Number(todaySummary.total_earnings ?? 0),
+        ridesToday,
+        bonusRemaining: Math.max(0, bonusTarget - ridesToday),
+        totalEarnings: Number(overall.total_earnings ?? 0),
+        totalTrips: Number(overall.completed_rides ?? 0),
+        averageFare: Number(overall.average_fare ?? 0),
+        recentTrips,
+      });
+    } catch (e: any) {
+      const message = e?.response?.data?.detail ?? e?.message ?? 'Failed to load dashboard data';
+      setDashboardError(message);
+    } finally {
+      setDashboardLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    refreshDashboard();
+    const interval = window.setInterval(refreshDashboard, 15000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,7 +209,15 @@ export function DriverPortal() {
       <Header screen={screen} setScreen={setScreen} />
 
       <div className="flex-1 relative overflow-hidden">
-        {screen === 'home' && <HomeScreen isOnline={isOnline} setScreen={setScreen} />}
+        {screen === 'home' && (
+          <HomeScreen
+            isOnline={isOnline}
+            setScreen={setScreen}
+            dashboard={dashboard}
+            dashboardLoading={dashboardLoading}
+            dashboardError={dashboardError}
+          />
+        )}
         {screen === 'active' && (
           <ActiveRideScreen
             setScreen={setScreen}
@@ -107,7 +226,14 @@ export function DriverPortal() {
             setIncomingRide={setIncomingRide}
           />
         )}
-        {screen === 'earnings' && <EarningsScreen setScreen={setScreen} />}
+        {screen === 'earnings' && (
+          <EarningsScreen
+            setScreen={setScreen}
+            dashboard={dashboard}
+            dashboardLoading={dashboardLoading}
+            dashboardError={dashboardError}
+          />
+        )}
         {screen === 'profile' && <ProfileScreen setScreen={setScreen} />}
 
         {isOnline && incomingRide && (
@@ -148,7 +274,7 @@ function Header({ screen, setScreen }: any) {
   );
 }
 
-function HomeScreen({ isOnline, setScreen }: any) {
+function HomeScreen({ isOnline, setScreen, dashboard, dashboardLoading, dashboardError }: any) {
   const { coords, error } = useDriverLocation(isOnline);
 
   const lastSentRef = useRef<number>(0);
@@ -247,22 +373,25 @@ function HomeScreen({ isOnline, setScreen }: any) {
             <div className="bg-[#1A1E28] rounded-xl p-4 border border-[#1E2433]">
               <div className="text-sm text-[#94A3B8] mb-1">Today's Earnings</div>
               <div className="text-2xl font-bold text-[#3B82F6]" style={{ fontFamily: 'var(--font-mono)' }}>
-                $48.20
+                {dashboardLoading ? '...' : `$${Number(dashboard?.todayEarnings ?? 0).toFixed(2)}`}
               </div>
             </div>
             <div className="bg-[#1A1E28] rounded-xl p-4 border border-[#1E2433]">
               <div className="text-sm text-[#94A3B8] mb-1">Rides Today</div>
               <div className="text-2xl font-bold text-[#3B82F6]" style={{ fontFamily: 'var(--font-mono)' }}>
-                6 trips
+                {dashboardLoading ? '...' : `${Number(dashboard?.ridesToday ?? 0)} trips`}
               </div>
             </div>
           </div>
 
           <div className="mt-4 p-4 bg-gradient-to-r from-[#3B82F6]/20 to-[#8B5CF6]/20 border border-[#3B82F6]/30 rounded-xl">
             <div className="text-sm text-[#3B82F6] font-medium">
-              🎯 Complete 3 more rides for a $5 bonus!
+              {Number(dashboard?.bonusRemaining ?? 0) > 0
+                ? `🎯 Complete ${dashboard.bonusRemaining} more ride${dashboard.bonusRemaining === 1 ? '' : 's'} for a $5 bonus!`
+                : '🎉 Bonus target achieved for today!'}
             </div>
           </div>
+          {dashboardError && <div className="mt-3 text-xs text-[#EF4444]">{dashboardError}</div>}
         </div>
       </div>
     </>
@@ -471,12 +600,12 @@ function ActiveRideScreen({ setScreen, ride, setActiveRide, setIncomingRide }: a
   );
 }
 
-function EarningsScreen({ setScreen }: any) {
-  const earnings = [
-    { time: '14:32', route: 'Downtown → Airport', fare: '$18.50', rating: 5 },
-    { time: '12:15', route: 'Mall → Office District', fare: '$12.30', rating: 5 },
-    { time: '10:45', route: 'Home Area → Shopping Center', fare: '$8.20', rating: 4 },
-    { time: '09:20', route: 'Station → University', fare: '$6.40', rating: 5 },
+function EarningsScreen({ setScreen, dashboard, dashboardLoading, dashboardError }: any) {
+  const stats = [
+    { label: 'Total Earnings', value: `$${Number(dashboard?.totalEarnings ?? 0).toFixed(2)}`, color: 'text-[#3B82F6]' },
+    { label: 'Total Trips', value: `${Number(dashboard?.totalTrips ?? 0)}`, color: 'text-[#10B981]' },
+    { label: "Today's Earnings", value: `$${Number(dashboard?.todayEarnings ?? 0).toFixed(2)}`, color: 'text-[#F59E0B]' },
+    { label: 'Avg. Fare', value: `$${Number(dashboard?.averageFare ?? 0).toFixed(2)}`, color: 'text-[#F5A623]' },
   ];
 
   return (
@@ -485,16 +614,11 @@ function EarningsScreen({ setScreen }: any) {
         <h2 className="text-2xl mb-6" style={{ fontFamily: 'var(--font-display)' }}>Earnings Dashboard</h2>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          {[
-            { label: 'Total Earnings', value: '$248.50', color: 'text-[#3B82F6]' },
-            { label: 'Total Trips', value: '34', color: 'text-[#10B981]' },
-            { label: 'Online Hours', value: '22h 14m', color: 'text-[#F59E0B]' },
-            { label: 'Avg. Rating', value: '4.91', color: 'text-[#F5A623]' },
-          ].map((stat) => (
+          {stats.map((stat) => (
             <div key={stat.label} className="bg-[#12151C] border border-[#1E2433] rounded-xl p-4">
               <div className="text-sm text-[#94A3B8] mb-2">{stat.label}</div>
               <div className={`text-2xl font-bold ${stat.color}`} style={{ fontFamily: 'var(--font-mono)' }}>
-                {stat.value}
+                {dashboardLoading ? '...' : stat.value}
               </div>
             </div>
           ))}
@@ -502,9 +626,16 @@ function EarningsScreen({ setScreen }: any) {
 
         <div className="bg-[#12151C] border border-[#1E2433] rounded-xl p-6 mb-6">
           <h3 className="text-lg mb-4">Today's Trips</h3>
-          <div className="space-y-3">
-            {earnings.map((trip, i) => (
-              <div key={i} className="bg-[#1A1E28] rounded-lg p-4 flex items-center justify-between hover:border-l-4 hover:border-[#3B82F6] transition-all">
+          {dashboardError ? (
+            <div className="text-sm text-[#EF4444]">{dashboardError}</div>
+          ) : dashboardLoading ? (
+            <div className="text-sm text-[#94A3B8]">Loading trips...</div>
+          ) : (dashboard?.recentTrips?.length ?? 0) === 0 ? (
+            <div className="text-sm text-[#94A3B8]">No completed trips yet today.</div>
+          ) : (
+            <div className="space-y-3">
+              {dashboard.recentTrips.map((trip: any) => (
+                <div key={trip.id} className="bg-[#1A1E28] rounded-lg p-4 flex items-center justify-between hover:border-l-4 hover:border-[#3B82F6] transition-all">
                 <div className="flex items-center gap-4">
                   <div className="text-sm text-[#94A3B8]" style={{ fontFamily: 'var(--font-mono)' }}>
                     {trip.time}
@@ -512,18 +643,23 @@ function EarningsScreen({ setScreen }: any) {
                   <div>
                     <div className="font-medium">{trip.route}</div>
                     <div className="text-sm text-[#94A3B8] flex items-center gap-1">
-                      {Array.from({ length: trip.rating }).map((_, i) => (
-                        <Star key={i} className="w-3 h-3 fill-[#F59E0B] text-[#F59E0B]" />
-                      ))}
+                      {trip.rating == null ? (
+                        <span>No rating yet</span>
+                      ) : (
+                        Array.from({ length: Math.max(0, Math.min(5, Math.round(trip.rating))) }).map((_, i) => (
+                          <Star key={i} className="w-3 h-3 fill-[#F59E0B] text-[#F59E0B]" />
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
                 <div className="text-xl font-bold text-[#3B82F6]" style={{ fontFamily: 'var(--font-mono)' }}>
-                  {trip.fare}
+                  ${Number(trip.fare ?? 0).toFixed(2)}
                 </div>
               </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <button

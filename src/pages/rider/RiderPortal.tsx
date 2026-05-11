@@ -111,8 +111,8 @@ export function RiderPortal() {
         )}
       </div>
     </div>
-  );
-}
+    );
+  }
 
 function Header({ screen, setScreen }: { screen: RiderScreen; setScreen: (s: RiderScreen) => void }) {
   const navigate = useNavigate();
@@ -329,11 +329,18 @@ function FindingDriverScreen({ rideId, setScreen, setMatchedRide, setMatchedDriv
       try {
         const { data } = await driverApi.getById(driverId);
         if (!cancelled) {
-          setMatchedDriverState(data);
+          // driverApi returns { driver: {...} } — normalize and set both local
+          // preview state and parent matched driver so downstream screens
+          // (Active/Completed) can display driver details.
+          const driverPayload = (data && data.driver) ? data.driver : data;
+          setMatchedDriverState(driverPayload);
+          if (setMatchedDriver) setMatchedDriver(driverPayload);
         }
       } catch {
         if (!cancelled) {
-          setMatchedDriverState({ id: driverId });
+          const fallback = { id: driverId };
+          setMatchedDriverState(fallback);
+          if (setMatchedDriver) setMatchedDriver(fallback);
         }
       }
     };
@@ -476,10 +483,21 @@ function ActiveRideScreen({ setScreen, ride, driver, setMatchedRide }: any) {
         </div>
 
 
-        <div className="p-4 bg-[#1A1E28] rounded-lg">
-          <div className="text-sm text-[#94A3B8] mb-1">Current Fare</div>
-          <div className="text-2xl font-medium text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>{ride?.fare ? `$${Number(ride.fare).toFixed(2)}` : 'Loading fare...'}</div>
-          <div className="text-xs text-[#94A3B8] mt-1">12 min remaining</div>
+        <div className="space-y-3">
+          <div className="p-3 bg-[#1A1E28] rounded-lg text-sm text-[#94A3B8]">
+            <div className="text-xs text-[#94A3B8]">Vehicle</div>
+            <div className="font-medium text-white mt-1">{driver?.vehicle_make_model ?? driver?.vehicle_type ?? 'Assigned vehicle'}</div>
+            <div className="flex gap-4 text-xs text-[#94A3B8] mt-2">
+              <div>Plate: <span className="text-white font-medium">{driver?.vehicle_number ?? 'N/A'}</span></div>
+              <div>License: <span className="text-white font-medium">{driver?.license_number ?? 'N/A'}</span></div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-[#1A1E28] rounded-lg">
+            <div className="text-sm text-[#94A3B8] mb-1">Current Fare</div>
+            <div className="text-2xl font-medium text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>{ride?.fare ? `$${Number(ride.fare).toFixed(2)}` : 'Loading fare...'}</div>
+            <div className="text-xs text-[#94A3B8] mt-1">12 min remaining</div>
+          </div>
         </div>
 
       
