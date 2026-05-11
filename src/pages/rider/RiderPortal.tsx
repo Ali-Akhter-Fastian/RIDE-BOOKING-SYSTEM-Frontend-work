@@ -32,6 +32,14 @@ export function RiderPortal() {
   const [matchedDriver, setMatchedDriver] = useState<any>(null);
   const { coords: geolocationCoords, error: geolocationError } = useGeolocation(false);
 
+  const resetAfterPayment = () => {
+    setRideId(null);
+    setMatchedRide(null);
+    setMatchedDriver(null);
+    setSelectedRide(null);
+    setDestination('');
+  };
+
   // Auto-set pickup from geolocation on mount
   useEffect(() => {
     if (geolocationCoords && !pickupCoords) {
@@ -109,6 +117,7 @@ export function RiderPortal() {
             rideId={rideId}
             ride={matchedRide}
             selectedRideType={selectedRide}
+            onPaymentSuccess={resetAfterPayment}
           />
         )}
       </div>
@@ -131,19 +140,6 @@ function Header({ screen, setScreen }: { screen: RiderScreen; setScreen: (s: Rid
       </div>
 
       <div className="flex items-center gap-4">
-        <button
-          onClick={() => setScreen('history')}
-          className="p-2 hover:bg-[#1A1E28] rounded-lg transition-colors"
-        >
-          <History className="w-5 h-5 text-[#94A3B8]" />
-        </button>
-        <button
-          onClick={() => setScreen('payment')}
-          className="p-2 hover:bg-[#1A1E28] rounded-lg transition-colors"
-        >
-          <CreditCard className="w-5 h-5 text-[#94A3B8]" />
-        </button>
-        
         <button
           onClick={() => navigate(ROUTES.PROFILE)}
           className="flex items-center gap-2 p-2 hover:bg-[#1A1E28] rounded-lg transition-colors"
@@ -706,7 +702,7 @@ function HistoryScreen({ setScreen, riderId }: any) {
   );
 }
 
-function PaymentScreen({ setScreen, rideId, ride, selectedRideType }: any) {
+function PaymentScreen({ setScreen, rideId, ride, selectedRideType, onPaymentSuccess }: any) {
   const [methods, setMethods] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -900,6 +896,9 @@ function PaymentScreen({ setScreen, rideId, ride, selectedRideType }: any) {
                   throw new Error('Payment initiation did not return a payment id');
                 }
                 await paymentApi.confirm(paymentId);
+                if (onPaymentSuccess) {
+                  onPaymentSuccess();
+                }
                 setScreen('home');
               } catch (e: any) {
                 const msg = e?.response?.data?.detail ?? e?.message ?? 'Payment failed';
