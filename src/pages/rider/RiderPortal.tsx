@@ -4,6 +4,7 @@ import { Gauge, Bell, User, MapPin, Search, Mic, Home, Briefcase, Ticket, Credit
 import { MapView } from '../../components/map/RideMap';
 import { useRide } from '../../hooks/useRide';
 import { useGeolocation } from '../../hooks/useGeolocation';
+import { useAuthContext } from '../../context/AuthContext';
 import { ROUTES } from '../../routes/routeConfig';
 import { driverApi } from '../../api/driverApi';
 import { rideApi } from '../../api/rideApi';
@@ -19,6 +20,7 @@ const RIDE_TYPE_PRICING: Record<string, { name: string; subtitle: string; eta: s
 type RiderScreen = 'home' | 'finding' | 'active' | 'completed' | 'history' | 'payment';
 
 export function RiderPortal() {
+  const { user } = useAuthContext();
   const [screen, setScreen] = useState<RiderScreen>('home');
   const [pickupLocation, setPickupLocation] = useState('Current Location');
   const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -100,7 +102,7 @@ export function RiderPortal() {
         {screen === 'completed' && (
           <CompletedScreen setScreen={setScreen} ride={matchedRide} driver={matchedDriver} rideId={rideId} />
         )}
-        {screen === 'history' && <HistoryScreen setScreen={setScreen} />}
+        {screen === 'history' && <HistoryScreen setScreen={setScreen} riderId={user?.id ?? null} />}
         {screen === 'payment' && (
           <PaymentScreen
             setScreen={setScreen}
@@ -141,10 +143,7 @@ function Header({ screen, setScreen }: { screen: RiderScreen; setScreen: (s: Rid
         >
           <CreditCard className="w-5 h-5 text-[#94A3B8]" />
         </button>
-        <button className="relative p-2 hover:bg-[#1A1E28] rounded-lg transition-colors">
-          <Bell className="w-5 h-5 text-[#94A3B8]" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-[#EF4444] rounded-full"></span>
-        </button>
+        
         <button
           onClick={() => navigate(ROUTES.PROFILE)}
           className="flex items-center gap-2 p-2 hover:bg-[#1A1E28] rounded-lg transition-colors"
@@ -589,7 +588,7 @@ function CompletedScreen({ setScreen, ride, driver, rideId }: any) {
   );
 }
 
-function HistoryScreen({ setScreen }: any) {
+function HistoryScreen({ setScreen, riderId }: any) {
   const [rides, setRides] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -600,9 +599,12 @@ function HistoryScreen({ setScreen }: any) {
         setLoading(true);
         setError(null);
         const response = await rideApi.history({ page: 1, page_size: 20 });
-        // Handle both direct response and nested data structure
-        const ridesData = (response as any)?.rides || response || [];
-        setRides(Array.isArray(ridesData) ? ridesData : []);
+        const ridesData = response?.data?.rides ?? [];
+        const normalizedRides = Array.isArray(ridesData) ? ridesData : [];
+        const filteredRides = riderId
+          ? normalizedRides.filter((ride: any) => String(ride?.rider_id ?? '') === String(riderId))
+          : normalizedRides;
+        setRides(filteredRides);
       } catch (err: any) {
         console.error('Failed to fetch ride history:', err);
         const errorMsg = err?.response?.data?.detail || err?.message || 'Failed to load ride history';
@@ -613,7 +615,7 @@ function HistoryScreen({ setScreen }: any) {
     };
 
     fetchRideHistory();
-  }, []);
+  }, [riderId]);
 
   const formatDate = (dateString: string) => {
     try {
