@@ -426,7 +426,7 @@ function IncomingRequestOverlay({
                       : (incomingRide.rider_id ?? 'R')).slice(0, 2).toUpperCase()}
                   </div>
                   <div>
-                    <div className="font-medium">Ride #{String(incomingRide.id).slice(0, 8)}</div>
+                    <div className="font-medium">Ride #{String((incomingRide.ride_id ?? incomingRide.id) ?? '').slice(0, 8)}</div>
                     <div className="text-sm text-[#94A3B8]">{incomingRide?.rider_full_name ?? 'Rider'}</div>
                     <div className="text-sm text-[#94A3B8] flex items-center gap-1">
                       <Star className="w-3 h-3 fill-[#F59E0B] text-[#F59E0B]" />
@@ -480,8 +480,9 @@ function IncomingRequestOverlay({
         <div className="grid grid-cols-2 gap-4">
           <button
             onClick={async () => {
-              if (incomingRide?.id && incomingRide?.driver_id) {
-                  await matchingApi.reject(incomingRide.id, incomingRide.driver_id);
+              const rideId = incomingRide?.ride_id ?? incomingRide?.id;
+              if (rideId && incomingRide?.driver_id) {
+                  await matchingApi.reject(rideId, incomingRide.driver_id);
               }
                 setIncomingRide(null);
               setScreen('home');
@@ -493,8 +494,9 @@ function IncomingRequestOverlay({
           </button>
           <button
             onClick={async () => {
-                if (incomingRide?.id && incomingRide?.driver_id) {
-                  const { data } = await matchingApi.accept(incomingRide.id, incomingRide.driver_id);
+                const rideId = incomingRide?.ride_id ?? incomingRide?.id;
+                if (rideId && incomingRide?.driver_id) {
+                  const { data } = await matchingApi.accept(rideId, incomingRide.driver_id);
                   setActiveRide(data ?? incomingRide);
               }
                 setIncomingRide(null);
