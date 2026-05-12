@@ -28,6 +28,7 @@ type DriverDashboard = {
 };
 
 export function DriverPortal() {
+  const PENDING_OFFER_STORAGE_KEY = 'driver_pending_offer';
   const [screen, setScreen] = useState<DriverScreen>('home');
   const [isOnline, setIsOnline] = useState(true);
   const [incomingRide, setIncomingRide] = useState<any>(null);
@@ -46,6 +47,23 @@ export function DriverPortal() {
   });
   const { driverSocket } = useSocketContext();
   const { user } = useAuthContext();
+  const getRideId = (ride: any) => String(ride?.ride_id ?? ride?.id ?? '');
+  const upsertIncomingRide = (nextRide: any) => {
+    if (!nextRide) return;
+    setIncomingRide((currentRide: any) => {
+      if (!currentRide) return nextRide;
+
+      const currentRideId = getRideId(currentRide);
+      const nextRideId = getRideId(nextRide);
+
+      // Keep the currently shown pending offer stable until driver action.
+      if (currentRideId && nextRideId && currentRideId !== nextRideId) {
+        return currentRide;
+      }
+
+      return { ...currentRide, ...nextRide };
+    });
+  };
 
   const startOfDayIso = () => {
     const now = new Date();
@@ -130,6 +148,31 @@ export function DriverPortal() {
   }, [user?.id]);
 
   useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(PENDING_OFFER_STORAGE_KEY);
+      if (!raw) return;
+      const restored = JSON.parse(raw);
+      if (restored) {
+        setIncomingRide(restored);
+      }
+    } catch {
+      // Ignore parse/storage errors and continue with live state.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (incomingRide) {
+        sessionStorage.setItem(PENDING_OFFER_STORAGE_KEY, JSON.stringify(incomingRide));
+      } else {
+        sessionStorage.removeItem(PENDING_OFFER_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore storage failures; in-memory state is still authoritative.
+    }
+  }, [incomingRide]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const markOnline = async () => {
@@ -154,10 +197,11 @@ export function DriverPortal() {
     driverApi.activeRequest().then(({ data }) => {
       if (data?.ride) {
         setIsOnline(true);
-        if (['accepted', 'in_progress'].includes(data.ride.status)) {
+        if (['accepted', 'in_progress'].includes(String(data.ride.status).toLowerCase())) {
           setActiveRide(data.ride);
+          setIncomingRide(null);
         } else {
-          setIncomingRide(data.ride);
+          upsertIncomingRide(data.ride);
         }
       }
     }).catch(() => {});
@@ -167,11 +211,32 @@ export function DriverPortal() {
   useEffect(() => {
     if (!driverSocket) return;
     const unsub = driverSocket.onRideOffer((data: any) => {
+      if (activeRide) return;
       setIsOnline(true);
-      setIncomingRide(data);
+      upsertIncomingRide(data);
     });
-    return unsub;
-  }, [driverSocket]);
+    const unsubRideCompleted = driverSocket.onRideCompleted((data: any) => {
+      const eventRideId = String(data?.ride_id ?? data?.id ?? '');
+      setIncomingRide((currentRide: any) => {
+        if (!currentRide) return currentRide;
+        const currentRideId = getRideId(currentRide);
+        return eventRideId && currentRideId === eventRideId ? null : currentRide;
+      });
+    });
+    const unsubRideCancelled = driverSocket.onRideCancelled((data: any) => {
+      const eventRideId = String(data?.ride_id ?? data?.id ?? '');
+      setIncomingRide((currentRide: any) => {
+        if (!currentRide) return currentRide;
+        const currentRideId = getRideId(currentRide);
+        return eventRideId && currentRideId === eventRideId ? null : currentRide;
+      });
+    });
+    return () => {
+      unsub();
+      unsubRideCompleted();
+      unsubRideCancelled();
+    };
+  }, [driverSocket, activeRide]);
 
   // Polling fallback — every 3 s while online and no active ride
   useEffect(() => {
@@ -196,7 +261,16 @@ export function DriverPortal() {
         if (cancelled) return;
 
         const ride = data?.ride ?? null;
-        setIncomingRide((currentRide: any) => ride ?? currentRide);
+        if (!ride) return;
+
+        const normalizedStatus = String(ride.status ?? '').toLowerCase();
+        if (normalizedStatus === 'accepted' || normalizedStatus === 'in_progress') {
+          setActiveRide((currentRide: any) => currentRide ?? ride);
+          setIncomingRide(null);
+          return;
+        }
+
+        upsertIncomingRide(ride);
       } catch {
         if (!cancelled) {
           setIncomingRide((currentRide: any) => currentRide);
@@ -213,7 +287,7 @@ export function DriverPortal() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [isOnline, screen, activeRide]);
+  }, [isOnline, activeRide]);
 
   return (
     <div className="size-full flex flex-col overflow-hidden">
@@ -492,8 +566,8 @@ function IncomingRequestOverlay({
           <button
             onClick={async () => {
               const rideId = incomingRide?.ride_id ?? incomingRide?.id;
-              if (rideId && incomingRide?.driver_id) {
-                  await matchingApi.reject(rideId, incomingRide.driver_id);
+              if (rideId) {
+                  await matchingApi.reject(rideId);
               }
                 setIncomingRide(null);
               setScreen('home');
@@ -506,8 +580,8 @@ function IncomingRequestOverlay({
           <button
             onClick={async () => {
                 const rideId = incomingRide?.ride_id ?? incomingRide?.id;
-                if (rideId && incomingRide?.driver_id) {
-                  const { data } = await matchingApi.accept(rideId, incomingRide.driver_id);
+                if (rideId) {
+                  const { data } = await matchingApi.accept(rideId);
                   setActiveRide(data ?? incomingRide);
               }
                 setIncomingRide(null);

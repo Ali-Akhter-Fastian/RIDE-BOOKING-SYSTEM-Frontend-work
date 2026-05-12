@@ -9,12 +9,12 @@ export const matchingApi = {
     client.post(`${MATCHING_PREFIX}/find`, { ride_id }),
 
   // POST /api/matching/accept
-  accept: (ride_id: string, driver_id: string) =>
-    client.post(`${MATCHING_PREFIX}/accept`, { ride_id, driver_id }),
+  accept: (ride_id: string) =>
+    client.post(`${MATCHING_PREFIX}/accept`, { ride_id }),
 
   // POST /api/matching/reject — retries matching with the next driver
-  reject: (ride_id: string, driver_id: string) =>
-    client.post(`${MATCHING_PREFIX}/reject`, { ride_id, driver_id }),
+  reject: (ride_id: string) =>
+    client.post(`${MATCHING_PREFIX}/reject`, { ride_id }),
 
   // GET /api/matching/status/{ride_id} — polling fallback
   status: (ride_id: string) =>
