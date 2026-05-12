@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Gauge, Bell, User, MapPin, Search, Mic, Home, Briefcase, Ticket, CreditCard, Clock, Users, X, Star, DollarSign, History, Navigation } from 'lucide-react';
+import { Gauge, User, MapPin, Search, Mic, Home, Briefcase, Clock, Users, Star, History, Navigation } from 'lucide-react';
+import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import L, { type LeafletMouseEvent } from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { MapView } from '../../components/map/RideMap';
 import { useRide } from '../../hooks/useRide';
 import { useGeolocation } from '../../hooks/useGeolocation';
@@ -10,6 +13,7 @@ import { driverApi } from '../../api/driverApi';
 import { rideApi } from '../../api/rideApi';
 import { matchingApi } from '../../api/matchingApi';
 import { paymentApi } from '../../api/paymentApi';
+import { client } from '../../api/client';
 
 const RIDE_TYPE_PRICING: Record<string, { name: string; subtitle: string; eta: string; price: number; seats: number; image: string }> = {
   ridex: { name: 'RideX', subtitle: 'Standard', eta: '3 min away', price: 4.2, seats: 4, image: '🚗' },
@@ -18,6 +22,153 @@ const RIDE_TYPE_PRICING: Record<string, { name: string; subtitle: string; eta: s
 };
 
 type RiderScreen = 'home' | 'finding' | 'active' | 'completed' | 'history' | 'payment';
+type LatLng = { lat: number; lng: number };
+type MapPickMode = 'destination' | 'pickup';
+type FareEstimate = {
+  total: number;
+  distanceKm: number;
+  durationMin: number;
+  surge: number;
+  baseFare: number;
+  source: 'n8n' | 'local';
+};
+
+const KARACHI_CENTER: [number, number] = [24.8607, 67.0011];
+const DEFAULT_FARE_WEBHOOK_URL = import.meta.env.VITE_N8N_PRICING_WEBHOOK_URL ?? '';
+
+const leafletMarkerIcon = L.icon({
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
+const toNum = (value: unknown): number | null => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
+const rideTypeToVehicle = (rideType: string | null): 'bike' | 'car' | 'van' => {
+  if (rideType === 'ridexl') return 'van';
+  if (rideType === 'comfort') return 'car';
+  return 'bike';
+};
+
+const rideTypeRate = (rideType: string | null): { baseFare: number; perKm: number } => {
+  if (rideType === 'ridexl') return { baseFare: 140, perKm: 46 };
+  if (rideType === 'comfort') return { baseFare: 190, perKm: 58 };
+  return { baseFare: 90, perKm: 34 };
+};
+
+const haversineKm = (from: LatLng, to: LatLng): number => {
+  const radiusKm = 6371;
+  const dLat = ((to.lat - from.lat) * Math.PI) / 180;
+  const dLng = ((to.lng - from.lng) * Math.PI) / 180;
+  const lat1 = (from.lat * Math.PI) / 180;
+  const lat2 = (to.lat * Math.PI) / 180;
+  const x =
+    Math.sin(dLat / 2) ** 2 +
+    Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * radiusKm * Math.asin(Math.sqrt(x));
+};
+
+const normalizeFarePayload = (
+  response: any,
+  pickup: LatLng,
+  destination: LatLng,
+  selectedRide: string | null,
+): FareEstimate => {
+  const raw = response?.data ?? response ?? {};
+  const breakdown = raw.breakdown ?? raw.pricing ?? {};
+  const distanceKm =
+    toNum(raw.distance_km) ??
+    toNum(raw.distance) ??
+    toNum(breakdown.distance_km) ??
+    toNum(breakdown.distance) ??
+    haversineKm(pickup, destination);
+
+  const durationMin =
+    toNum(raw.duration_min) ??
+    toNum(raw.duration_minutes) ??
+    toNum(raw.duration) ??
+    toNum(breakdown.duration_min) ??
+    toNum(breakdown.duration_minutes) ??
+    Math.max(4, Math.round((distanceKm / 28) * 60));
+
+  const surge =
+    toNum(raw.surge) ??
+    toNum(raw.surge_multiplier) ??
+    toNum(breakdown.surge) ??
+    toNum(breakdown.surge_multiplier) ??
+    1;
+
+  const rates = rideTypeRate(selectedRide);
+  const baseFare = toNum(raw.base_fare) ?? toNum(raw.base) ?? toNum(breakdown.base_fare) ?? toNum(breakdown.base) ?? rates.baseFare;
+  const perKm = toNum(raw.per_km) ?? toNum(raw.rate_per_km) ?? toNum(breakdown.per_km) ?? toNum(breakdown.rate_per_km) ?? rates.perKm;
+  const total =
+    toNum(raw.total_price) ??
+    toNum(raw.total) ??
+    toNum(raw.price) ??
+    toNum(raw.fare) ??
+    toNum(breakdown.total_price) ??
+    toNum(breakdown.total) ??
+    Math.round((baseFare + perKm * distanceKm) * surge);
+
+  return {
+    total,
+    distanceKm,
+    durationMin,
+    surge,
+    baseFare,
+    source: 'n8n',
+  };
+};
+
+const buildLocalEstimate = (pickup: LatLng, destination: LatLng, selectedRide: string | null): FareEstimate => {
+  const distanceKm = haversineKm(pickup, destination);
+  const durationMin = Math.max(4, Math.round((distanceKm / 28) * 60));
+  const rates = rideTypeRate(selectedRide);
+  const surge = distanceKm > 10 ? 1.2 : 1;
+  const total = Math.round((rates.baseFare + rates.perKm * distanceKm) * surge);
+
+  return {
+    total,
+    distanceKm,
+    durationMin,
+    surge,
+    baseFare: rates.baseFare,
+    source: 'local',
+  };
+};
+
+function MapClickHandler({
+  mode,
+  onPick,
+}: {
+  mode: MapPickMode;
+  onPick: (mode: MapPickMode, lat: number, lng: number) => void;
+}) {
+  useMapEvents({
+    click(event: LeafletMouseEvent) {
+      onPick(mode, event.latlng.lat, event.latlng.lng);
+    },
+  });
+  return null;
+}
+
+function MapAutoCenter({ pickup, destination }: { pickup: LatLng | null; destination: LatLng | null }) {
+  const map = useMap();
+  const center = destination ?? pickup;
+  useEffect(() => {
+    if (center) {
+      map.flyTo([center.lat, center.lng], Math.max(map.getZoom(), 13), { duration: 0.45 });
+    }
+  }, [center?.lat, center?.lng, map]);
+  return null;
+}
 
 export function RiderPortal() {
   const { user } = useAuthContext();
@@ -25,6 +176,7 @@ export function RiderPortal() {
   const [pickupLocation, setPickupLocation] = useState('Current Location');
   const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [destination, setDestination] = useState('');
+  const [destinationCoords, setDestinationCoords] = useState<LatLng | null>(null);
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
   const { requestRide, loading, error } = useRide();
   const [rideId, setRideId] = useState<string | null>(null);
@@ -38,6 +190,7 @@ export function RiderPortal() {
     setMatchedDriver(null);
     setSelectedRide(null);
     setDestination('');
+    setDestinationCoords(null);
   };
 
   // Auto-set pickup from geolocation on mount
@@ -60,6 +213,8 @@ export function RiderPortal() {
             setPickupCoords={setPickupCoords}
             destination={destination}
             setDestination={setDestination}
+            destinationCoords={destinationCoords}
+            setDestinationCoords={setDestinationCoords}
             selectedRide={selectedRide}
             setSelectedRide={setSelectedRide}
             setScreen={setScreen}
@@ -82,8 +237,10 @@ export function RiderPortal() {
                   await matchingApi.find((res as any).id);
                 }
                 setScreen('finding');
+                return true;
               } catch (e) {
                 console.error('Failed to create ride', e);
+                return false;
               }
             }}
             loading={loading}
@@ -157,8 +314,39 @@ function Header({ screen, setScreen }: { screen: RiderScreen; setScreen: (s: Rid
   );
 }
 
-function HomeScreen({ pickupLocation, setPickupLocation, pickupCoords, setPickupCoords, destination, setDestination, selectedRide, setSelectedRide, setScreen, onConfirmRide, loading, error, geolocationError }: any) {
+function HomeScreen({
+  pickupLocation,
+  setPickupLocation,
+  pickupCoords,
+  setPickupCoords,
+  destination,
+  setDestination,
+  destinationCoords,
+  setDestinationCoords,
+  selectedRide,
+  setSelectedRide,
+  onConfirmRide,
+  loading,
+  error,
+  geolocationError,
+}: any) {
   const [showCoords, setShowCoords] = useState(false);
+  const [pickMode, setPickMode] = useState<MapPickMode>('destination');
+  const [isEstimating, setIsEstimating] = useState(false);
+  const [estimateError, setEstimateError] = useState<string | null>(null);
+  const [fareEstimate, setFareEstimate] = useState<FareEstimate | null>(null);
+  const [webhookUrl, setWebhookUrl] = useState(DEFAULT_FARE_WEBHOOK_URL);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem('rider_pricing_webhook_url');
+    if (saved && !DEFAULT_FARE_WEBHOOK_URL) {
+      setWebhookUrl(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem('rider_pricing_webhook_url', webhookUrl.trim());
+  }, [webhookUrl]);
   
   const handleUseCurrentLocation = async () => {
     try {
@@ -189,6 +377,75 @@ function HomeScreen({ pickupLocation, setPickupLocation, pickupCoords, setPickup
       console.error('Geolocation error:', err);
     }
   };
+
+  const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
+      { headers: { Accept: 'application/json' } },
+    );
+    if (!res.ok) {
+      throw new Error('Unable to resolve this map point');
+    }
+    const data = await res.json();
+    return data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  };
+
+  const handleMapPick = async (mode: MapPickMode, lat: number, lng: number) => {
+    if (mode === 'pickup') {
+      setPickupCoords({ lat, lng });
+      try {
+        const address = await reverseGeocode(lat, lng);
+        setPickupLocation(address);
+      } catch {
+        setPickupLocation(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+      }
+      return;
+    }
+
+    setDestinationCoords({ lat, lng });
+    try {
+      const address = await reverseGeocode(lat, lng);
+      setDestination(address);
+    } catch {
+      setDestination(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+    }
+  };
+
+  const handleEstimateFare = async () => {
+    setEstimateError(null);
+    if (!pickupCoords) {
+      setEstimateError('Set pickup location first.');
+      return;
+    }
+    if (!destinationCoords) {
+      setEstimateError('Tap the map to set destination first.');
+      return;
+    }
+
+    const payload = {
+      pickup: pickupCoords,
+      destination: destinationCoords,
+      vehicle_type: rideTypeToVehicle(selectedRide),
+      webhook_url: webhookUrl.trim() || undefined,
+    };
+
+    setIsEstimating(true);
+    try {
+      const { data } = await client.post('/api/webhooks/fare-estimate', payload);
+      setFareEstimate(normalizeFarePayload(data, pickupCoords, destinationCoords, selectedRide));
+    } catch (e: any) {
+      const fallback = buildLocalEstimate(pickupCoords, destinationCoords, selectedRide);
+      setFareEstimate(fallback);
+      const message = e?.response?.data?.detail;
+      setEstimateError(
+        typeof message === 'string'
+          ? `${message} Showing local estimate fallback.`
+          : 'Pricing workflow unavailable. Showing local estimate fallback.',
+      );
+    } finally {
+      setIsEstimating(false);
+    }
+  };
   
   const rideOptions = [
     { id: 'ridex', ...RIDE_TYPE_PRICING.ridex },
@@ -200,7 +457,23 @@ function HomeScreen({ pickupLocation, setPickupLocation, pickupCoords, setPickup
 
   return (
     <>
-      <MapView />
+      <div className="absolute inset-0 z-0">
+        <MapContainer
+          center={KARACHI_CENTER}
+          zoom={12}
+          className="h-full w-full"
+          scrollWheelZoom
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <MapAutoCenter pickup={pickupCoords} destination={destinationCoords} />
+          <MapClickHandler mode={pickMode} onPick={handleMapPick} />
+          {pickupCoords && <Marker position={[pickupCoords.lat, pickupCoords.lng]} icon={leafletMarkerIcon} />}
+          {destinationCoords && <Marker position={[destinationCoords.lat, destinationCoords.lng]} icon={leafletMarkerIcon} />}
+        </MapContainer>
+      </div>
       <div className="absolute left-0 top-0 bottom-0 w-full lg:w-[420px] bg-[#12151C] border-r border-[#1E2433] p-6 overflow-y-auto z-10">
         <div className="space-y-6">
           <div>
@@ -257,6 +530,40 @@ function HomeScreen({ pickupLocation, setPickupLocation, pickupCoords, setPickup
             </button>
           </div>
 
+          <div className="p-3 rounded-lg border border-[#1E2433] bg-[#111827] space-y-3">
+            <div className="text-xs text-[#94A3B8]">Map mode</div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setPickMode('destination')}
+                className={`px-3 py-2 rounded-lg text-sm border transition ${
+                  pickMode === 'destination'
+                    ? 'bg-[#F5A623] text-[#0A0C10] border-[#F5A623]'
+                    : 'bg-[#1A1E28] border-[#273145] text-[#CBD5E1]'
+                }`}
+              >
+                Set destination
+              </button>
+              <button
+                onClick={() => setPickMode('pickup')}
+                className={`px-3 py-2 rounded-lg text-sm border transition ${
+                  pickMode === 'pickup'
+                    ? 'bg-[#F5A623] text-[#0A0C10] border-[#F5A623]'
+                    : 'bg-[#1A1E28] border-[#273145] text-[#CBD5E1]'
+                }`}
+              >
+                Set pickup
+              </button>
+            </div>
+            <div className="text-xs text-[#94A3B8]">
+              Click on map to place <span className="text-white">{pickMode}</span> pin.
+            </div>
+            {destinationCoords && (
+              <div className="text-xs text-[#64748B]">
+                Destination: {destinationCoords.lat.toFixed(4)}, {destinationCoords.lng.toFixed(4)}
+              </div>
+            )}
+          </div>
+
           {destination && (
             <>
               <div className="space-y-3">
@@ -285,21 +592,56 @@ function HomeScreen({ pickupLocation, setPickupLocation, pickupCoords, setPickup
                 ))}
               </div>
 
+              <div className="space-y-3 rounded-lg border border-[#1E2433] bg-[#101725] p-3">
+                <div className="text-xs text-[#94A3B8]">n8n pricing webhook (optional)</div>
+                <input
+                  value={webhookUrl}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                  placeholder="https://your-n8n-instance/webhook/ride-ranking"
+                  className="w-full rounded-lg border border-[#273145] bg-[#0F172A] px-3 py-2 text-sm text-[#E2E8F0] placeholder:text-[#64748B] focus:outline-none focus:ring-2 focus:ring-[#F5A623]"
+                />
+                <button
+                  onClick={handleEstimateFare}
+                  disabled={isEstimating}
+                  className="w-full rounded-lg border border-[#10B981] bg-[#10B981]/20 px-4 py-2 text-sm font-medium text-[#A7F3D0] hover:bg-[#10B981]/30 disabled:opacity-60"
+                >
+                  {isEstimating ? 'Estimating fare...' : 'Get estimated price'}
+                </button>
+                {estimateError && <div className="text-xs text-[#FCA5A5]">{estimateError}</div>}
+              </div>
+
               <div className="flex items-center gap-2 p-3 bg-[#1A1E28] border border-[#F59E0B] rounded-lg">
                 <span className="text-xl">⚡</span>
-                <div className="text-sm text-[#F59E0B]">Surge: 1.3x — High demand area</div>
+                <div className="text-sm text-[#F59E0B]">
+                  {fareEstimate
+                    ? `Surge ${fareEstimate.surge.toFixed(2)}x • ${fareEstimate.distanceKm.toFixed(2)} km • ${Math.round(fareEstimate.durationMin)} min`
+                    : 'Estimate fare first, then request ride'}
+                </div>
               </div>
+
+              {fareEstimate && (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-emerald-200">Estimated Fare</div>
+                    <div className="text-xl font-bold text-emerald-200">PKR {fareEstimate.total}</div>
+                  </div>
+                  <div className="mt-2 text-xs text-emerald-100/90">
+                    Base PKR {fareEstimate.baseFare} • Source: {fareEstimate.source === 'n8n' ? 'n8n workflow' : 'local fallback'}
+                  </div>
+                </div>
+              )}
 
               {selectedRide && (
                 <button
                   onClick={async () => {
                     await onConfirmRide();
-                    setScreen('finding');
                   }}
-                  disabled={loading}
+                  disabled={loading || !pickupCoords || !destinationCoords}
                   className="w-full bg-[#F5A623] hover:bg-[#F5A623]/90 disabled:opacity-60 disabled:cursor-not-allowed text-[#0A0C10] py-4 rounded-lg font-medium transition-all"
                 >
-                  {loading ? 'Requesting ride...' : `Confirm ${selectedOption?.name} — ${selectedOption?.price}`}
+                  {loading
+                    ? 'Requesting ride...'
+                    : `Request ${selectedOption?.name} ${fareEstimate ? `• PKR ${fareEstimate.total}` : ''}`}
                 </button>
               )}
               {error && <div className="text-sm text-[#EF4444]">{error}</div>}
