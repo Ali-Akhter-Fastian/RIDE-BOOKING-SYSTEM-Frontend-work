@@ -149,6 +149,31 @@ export function DriverPortal() {
     };
   }, []);
 
+  // Sync isOnline from DB on mount — if driver was already available, restore online state
+  useEffect(() => {
+    driverApi.activeRequest().then(({ data }) => {
+      if (data?.ride) {
+        setIsOnline(true);
+        if (['accepted', 'in_progress'].includes(data.ride.status)) {
+          setActiveRide(data.ride);
+        } else {
+          setIncomingRide(data.ride);
+        }
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Real-time: subscribe to ride_offer WebSocket event for instant popup
+  useEffect(() => {
+    if (!driverSocket) return;
+    const unsub = driverSocket.onRideOffer((data: any) => {
+      setIsOnline(true);
+      setIncomingRide(data);
+    });
+    return unsub;
+  }, [driverSocket]);
+
+  // Polling fallback — every 3 s while online and no active ride
   useEffect(() => {
     if (!isOnline) {
       setIncomingRide(null);
@@ -189,20 +214,6 @@ export function DriverPortal() {
       window.clearInterval(interval);
     };
   }, [isOnline, screen, activeRide]);
-
-  // Subscribe to ride offers via WebSocket (if connected)
-  useEffect(() => {
-    if (!driverSocket) return;
-
-    const unsub = driverSocket.onRideOffer((data: any) => {
-      // When a ride offer arrives via websocket, show the incoming overlay
-      setIncomingRide(data ?? null);
-    });
-
-    return () => {
-      unsub?.();
-    };
-  }, [driverSocket]);
 
   return (
     <div className="size-full flex flex-col overflow-hidden">

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, ReactNode, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { createRiderSocket } from '../services/websocket/riderSocket';
 import { createDriverSocket } from '../services/websocket/driverSocket';
 
@@ -10,41 +10,39 @@ type SocketContextValue = {
 const SocketContext = createContext<SocketContextValue>({ riderSocket: null, driverSocket: null });
 
 export function SocketProvider({ userId, driverId, children }: { userId?: string; driverId?: string; children: ReactNode }) {
-  const [riderSocket, setRiderSocket] = useState<ReturnType<typeof createRiderSocket> | null>(null);
-  const [driverSocket, setDriverSocket] = useState<ReturnType<typeof createDriverSocket> | null>(null);
+  const riderRef = useRef<ReturnType<typeof createRiderSocket> | null>(null);
+  const driverRef = useRef<ReturnType<typeof createDriverSocket> | null>(null);
+  const [sockets, setSockets] = useState<SocketContextValue>({ riderSocket: null, driverSocket: null });
 
   useEffect(() => {
-    let mounted = true;
+    let riderSocket: ReturnType<typeof createRiderSocket> | null = null;
+    let driverSocket: ReturnType<typeof createDriverSocket> | null = null;
+
     if (userId) {
-      const ws = createRiderSocket(userId);
-      ws.connect();
-      if (mounted) setRiderSocket(ws);
+      riderSocket = createRiderSocket(userId);
+      riderSocket.connect();
+      riderRef.current = riderSocket;
     }
-    return () => {
-      mounted = false;
-      riderSocket?.disconnect();
-      setRiderSocket(null);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
-
-  useEffect(() => {
-    let mounted = true;
     if (driverId) {
-      const ws = createDriverSocket(driverId);
-      ws.connect();
-      if (mounted) setDriverSocket(ws);
+      driverSocket = createDriverSocket(driverId);
+      driverSocket.connect();
+      driverRef.current = driverSocket;
     }
+
+    // Trigger re-render so consumers get the real socket instances, not null
+    setSockets({ riderSocket, driverSocket });
+
     return () => {
-      mounted = false;
-      driverSocket?.disconnect();
-      setDriverSocket(null);
+      riderRef.current?.disconnect();
+      driverRef.current?.disconnect();
+      riderRef.current = null;
+      driverRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [driverId]);
+  }, [userId, driverId]);
 
   return (
-    <SocketContext.Provider value={{ riderSocket, driverSocket }}>
+    <SocketContext.Provider value={sockets}>
       {children}
     </SocketContext.Provider>
   );
