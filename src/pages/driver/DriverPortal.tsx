@@ -48,6 +48,33 @@ export function DriverPortal() {
   const { driverSocket } = useSocketContext();
   const { user } = useAuthContext();
   const getRideId = (ride: any) => String(ride?.ride_id ?? ride?.id ?? '');
+  const RIDE_COMPARE_FIELDS = [
+    'id',
+    'ride_id',
+    'status',
+    'rider_id',
+    'rider_full_name',
+    'origin',
+    'destination',
+    'pickup_latitude',
+    'pickup_longitude',
+    'dropoff_latitude',
+    'dropoff_longitude',
+    'fare',
+    'rating',
+  ];
+  const ridePayloadsEqual = (a: any, b: any) => {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    for (const key of RIDE_COMPARE_FIELDS) {
+      const av = a[key];
+      const bv = b[key];
+      if (av === bv) continue;
+      if (av == null && bv == null) continue;
+      return false;
+    }
+    return true;
+  };
   const upsertIncomingRide = (nextRide: any) => {
     if (!nextRide) return;
     setIncomingRide((currentRide: any) => {
@@ -61,7 +88,13 @@ export function DriverPortal() {
         return currentRide;
       }
 
-      return { ...currentRide, ...nextRide };
+      const merged = { ...currentRide, ...nextRide };
+      // Skip the state update if nothing meaningful changed — prevents the
+      // popup from re-rendering (and flickering) on every poll cycle.
+      if (ridePayloadsEqual(currentRide, merged)) {
+        return currentRide;
+      }
+      return merged;
     });
   };
 
@@ -238,7 +271,11 @@ export function DriverPortal() {
     };
   }, [driverSocket, activeRide]);
 
-  // Polling fallback — every 3 s while online and no active ride
+  // Polling fallback — only while online, no active ride, and no pending offer
+  // is on screen. Once an offer arrives (via WS or the first poll), we stop
+  // polling so the popup stays stable. WS events (ride_cancelled,
+  // ride_completed, status_update) handle teardown from there.
+  const hasIncomingRide = !!incomingRide;
   useEffect(() => {
     if (!isOnline) {
       setIncomingRide(null);
@@ -252,10 +289,18 @@ export function DriverPortal() {
       return;
     }
 
+    if (hasIncomingRide) {
+      // An offer is already displayed — no need to poll. Driver action,
+      // WS events, or a timeout will clear it.
+      setLoadingIncomingRide(false);
+      return;
+    }
+
     let cancelled = false;
+    let firstLoad = true;
 
     const loadIncomingRide = async () => {
-      setLoadingIncomingRide(true);
+      if (firstLoad) setLoadingIncomingRide(true);
       try {
         const { data } = await driverApi.activeRequest();
         if (cancelled) return;
@@ -276,7 +321,10 @@ export function DriverPortal() {
           setIncomingRide((currentRide: any) => currentRide);
         }
       } finally {
-        if (!cancelled) setLoadingIncomingRide(false);
+        if (!cancelled && firstLoad) {
+          setLoadingIncomingRide(false);
+          firstLoad = false;
+        }
       }
     };
 
@@ -287,7 +335,7 @@ export function DriverPortal() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [isOnline, activeRide]);
+  }, [isOnline, activeRide, hasIncomingRide]);
 
   return (
     <div className="size-full flex flex-col overflow-hidden">
