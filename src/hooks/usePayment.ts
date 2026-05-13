@@ -9,7 +9,7 @@ export function usePayment() {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await paymentApi.initiate({ ride_id, payment_method: method_id, amount });
+      const { data } = await paymentApi.initiate({ ride_id, method_id, amount });
       return data;
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? 'Payment initiation failed');

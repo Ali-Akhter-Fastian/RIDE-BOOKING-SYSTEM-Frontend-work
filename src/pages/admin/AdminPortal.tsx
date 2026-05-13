@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   LayoutDashboard,
   Car,
@@ -26,51 +26,24 @@ import {
   Star,
 } from 'lucide-react';
 import { MapView } from '../../components/map/RideMap';
-import { adminApi } from '../../api/adminApi';
 
 type AdminScreen = 'dashboard' | 'rides' | 'users' | 'analytics' | 'fraud';
 
 export function AdminPortal() {
   const [screen, setScreen] = useState<AdminScreen>('dashboard');
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
-  const [dashboard, setDashboard] = useState<any>(null);
-  const [rides, setRides] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [dashboardRes, ridesRes, usersRes] = await Promise.all([
-          adminApi.dashboard(),
-          adminApi.rides(50),
-          adminApi.users(50),
-        ]);
-        setDashboard(dashboardRes.data);
-        setRides(ridesRes.data?.rides ?? []);
-        setUsers(usersRes.data?.users ?? []);
-      } catch (error) {
-        console.error('Admin data load failed', error);
-      }
-    };
-    load();
-  }, []);
 
   return (
     <div className="size-full flex overflow-hidden">
-      <Sidebar
-        expanded={sidebarExpanded}
-        setSidebarExpanded={setSidebarExpanded}
-        screen={screen}
-        setScreen={setScreen}
-      />
+      <Sidebar expanded={sidebarExpanded} screen={screen} setScreen={setScreen} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
 
         <div className="flex-1 overflow-auto bg-[#0A0C10] p-6">
-          {screen === 'dashboard' && <DashboardScreen dashboard={dashboard} />}
-          {screen === 'rides' && <RidesScreen rides={rides} />}
-          {screen === 'users' && <UsersScreen users={users} />}
+          {screen === 'dashboard' && <DashboardScreen />}
+          {screen === 'rides' && <RidesScreen />}
+          {screen === 'users' && <UsersScreen />}
           {screen === 'analytics' && <AnalyticsScreen />}
           {screen === 'fraud' && <FraudScreen />}
         </div>
@@ -79,7 +52,7 @@ export function AdminPortal() {
   );
 }
 
-function Sidebar({ expanded, setSidebarExpanded, screen, setScreen }: any) {
+function Sidebar({ expanded, screen, setScreen }: any) {
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { id: 'rides', icon: Car, label: 'Rides' },
@@ -161,14 +134,14 @@ function Header() {
   );
 }
 
-function DashboardScreen({ dashboard }: { dashboard: any }) {
+function DashboardScreen() {
   const kpis = [
-    { label: 'Active Rides', value: String(dashboard?.active_rides ?? 0), icon: Activity, color: 'text-[#10B981]', live: true },
-    { label: 'Drivers Online', value: String(dashboard?.total_drivers ?? 0), icon: Car, color: 'text-[#3B82F6]' },
-    { label: 'Total Revenue', value: `$${dashboard?.total_revenue ?? 0}`, icon: DollarSign, color: 'text-[#F5A623]' },
-    { label: 'Total Users', value: String(dashboard?.total_users ?? 0), icon: Users, color: 'text-[#8B5CF6]' },
+    { label: 'Active Rides', value: '47', icon: Activity, color: 'text-[#10B981]', live: true },
+    { label: 'Drivers Online', value: '234', icon: Car, color: 'text-[#3B82F6]' },
+    { label: "Today's Revenue", value: '$12,450', icon: DollarSign, color: 'text-[#F5A623]' },
+    { label: 'New Signups', value: '18', icon: Users, color: 'text-[#8B5CF6]' },
     { label: 'Avg. Wait Time', value: '2.3 min', icon: Clock, color: 'text-[#F59E0B]' },
-    { label: 'Failed Payments', value: String(dashboard?.failed_payments ?? 0), icon: AlertTriangle, color: 'text-[#EF4444]' },
+    { label: 'Flagged Transactions', value: '3', icon: AlertTriangle, color: 'text-[#EF4444]' },
   ];
 
   const activities = [
@@ -273,25 +246,14 @@ function DashboardScreen({ dashboard }: { dashboard: any }) {
   );
 }
 
-function RidesScreen({ rides }: { rides: any[] }) {
-  const fallbackRides = [
+function RidesScreen() {
+  const rides = [
     { id: '#4821', rider: 'Sara M.', driver: 'Ahmad K.', pickup: 'Downtown', dropoff: 'Airport', status: 'Completed', fare: '$18.50', date: '2026-04-22 14:32' },
     { id: '#4820', rider: 'John D.', driver: 'Fahad K.', pickup: 'Mall', dropoff: 'Office', status: 'Completed', fare: '$12.50', date: '2026-04-22 14:28' },
     { id: '#4819', rider: 'Lisa A.', driver: 'Maria S.', pickup: 'Home', dropoff: 'University', status: 'Active', fare: '$8.20', date: '2026-04-22 14:25' },
     { id: '#4818', rider: 'Mike R.', driver: 'Omar H.', pickup: 'Station', dropoff: 'Hotel', status: 'Active', fare: '$15.30', date: '2026-04-22 14:20' },
     { id: '#4817', rider: 'Anna K.', driver: 'Ali M.', pickup: 'Airport', dropoff: 'Downtown', status: 'Disputed', fare: '$22.40', date: '2026-04-22 14:15' },
   ];
-  const rows = rides.length
-    ? rides.map((ride) => ({
-        id: ride.id,
-        rider: ride.rider_id,
-        driver: ride.driver_id ?? '-',
-        pickup: ride.origin,
-        dropoff: ride.destination,
-        status: String(ride.status ?? '').replace('_', ' '),
-        fare: ride.fare ? `$${ride.fare}` : 'N/A',
-      }))
-    : fallbackRides;
 
   return (
     <div className="space-y-6">
@@ -331,7 +293,7 @@ function RidesScreen({ rides }: { rides: any[] }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((ride, i) => (
+              {rides.map((ride, i) => (
                 <tr
                   key={ride.id}
                   className={`border-b border-[#1E2433] hover:bg-[#1A1E28] hover:border-l-4 hover:border-l-[#8B5CF6] transition-all ${
@@ -349,9 +311,9 @@ function RidesScreen({ rides }: { rides: any[] }) {
                   <td className="px-4 py-3">
                     <span
                       className={`inline-flex px-2 py-1 rounded text-xs ${
-                        String(ride.status).toLowerCase() === 'completed'
+                        ride.status === 'Completed'
                           ? 'bg-[#10B981]/20 text-[#10B981]'
-                          : ['requested', 'offered', 'accepted', 'in progress', 'in_progress', 'active'].includes(String(ride.status).toLowerCase())
+                          : ride.status === 'Active'
                           ? 'bg-[#3B82F6]/20 text-[#3B82F6]'
                           : 'bg-[#EF4444]/20 text-[#EF4444]'
                       }`}
@@ -386,27 +348,15 @@ function RidesScreen({ rides }: { rides: any[] }) {
   );
 }
 
-function UsersScreen({ users }: { users: any[] }) {
+function UsersScreen() {
   const [activeTab, setActiveTab] = useState<'riders' | 'drivers'>('riders');
 
-  const fallbackUsers = [
+  const users = [
     { name: 'Sara M.', email: 'sara.m@email.com', phone: '+1234567890', joined: '2026-01-15', trips: 47, status: 'Active' },
     { name: 'John D.', email: 'john.d@email.com', phone: '+1234567891', joined: '2026-02-20', trips: 32, status: 'Active' },
     { name: 'Lisa A.', email: 'lisa.a@email.com', phone: '+1234567892', joined: '2026-03-10', trips: 18, status: 'Active' },
     { name: 'Mike R.', email: 'mike.r@email.com', phone: '+1234567893', joined: '2026-04-01', trips: 5, status: 'Pending' },
   ];
-  const rows = users.length
-    ? users
-        .filter((user) => (activeTab === 'drivers' ? user.role === 'driver' : user.role === 'rider'))
-        .map((user) => ({
-          name: user.full_name,
-          email: user.email,
-          phone: '-',
-          joined: user.created_at,
-          trips: '-',
-          status: 'Active',
-        }))
-    : fallbackUsers;
 
   return (
     <div className="space-y-6">
@@ -447,7 +397,7 @@ function UsersScreen({ users }: { users: any[] }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((user, i) => (
+            {users.map((user, i) => (
               <tr
                 key={user.email}
                 className={`border-b border-[#1E2433] hover:bg-[#1A1E28] transition-all ${

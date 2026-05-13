@@ -21,13 +21,11 @@ client.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config;
-    const requestUrl = original?.url ?? '';
-    const isAuthEndpoint = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/refresh') || requestUrl.includes('/auth/register');
-    if (error.response?.status === 401 && !original._retry && !isAuthEndpoint) {
+    if (error.response?.status === 401 && !original._retry) {
       original._retry = true;
       try {
         const refresh = tokenStorage.getRefresh();
-        const { data } = await axios.post(`${BASE_URL}/api/auth/refresh`, { refresh_token: refresh });
+        const { data } = await axios.post(`${BASE_URL}/auth/refresh`, { refresh_token: refresh });
         tokenStorage.setAccess(data.access_token);
         original.headers.Authorization = `Bearer ${data.access_token}`;
         return client(original);

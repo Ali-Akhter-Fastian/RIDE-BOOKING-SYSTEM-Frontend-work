@@ -1,22 +1,4 @@
-const normalizeWsBaseUrl = (value: string | undefined): string => {
-  if (!value) {
-    return 'ws://localhost:8000';
-  }
-
-  const trimmed = value.replace(/\/+$/, '');
-  if (trimmed.startsWith('ws://') || trimmed.startsWith('wss://')) {
-    return trimmed;
-  }
-  if (trimmed.startsWith('http://')) {
-    return `ws://${trimmed.slice('http://'.length)}`;
-  }
-  if (trimmed.startsWith('https://')) {
-    return `wss://${trimmed.slice('https://'.length)}`;
-  }
-  return trimmed;
-};
-
-const WS_BASE = normalizeWsBaseUrl(import.meta.env.VITE_WS_URL);
+const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
 
 type EventHandler = (data: unknown) => void;
 
