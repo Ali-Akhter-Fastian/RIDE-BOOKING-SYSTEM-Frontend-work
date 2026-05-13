@@ -1,27 +1,50 @@
 import { client } from './client';
+import { tokenStorage } from '../utils/tokenStorage';
+
+const AUTH_ROUTE_PREFIX = '/api/auth';
 
 export const authApi = {
-  // POST /auth/register
-  register: (data: { email?: string; phone?: string; name: string; role: string; password: string }) =>
-    client.post('/auth/register', data),
+  // POST ${AUTH_ROUTE_PREFIX}/register
+  register: (data: {
+    email: string;
+    password: string;
+    confirm_password: string;
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+    role?: string;
+  }) =>
+    client.post(`${AUTH_ROUTE_PREFIX}/register`, data),
 
-  // POST /auth/login
+  // POST /api/driver/register
+  registerDriver: (data: {
+    email: string;
+    password: string;
+    confirm_password: string;
+    first_name?: string;
+    last_name?: string;
+    full_name?: string;
+    license_number: string;
+    vehicle_number: string;
+    vehicle_type: string;
+    vehicle_make_model?: string;
+    vehicle_color?: string;
+  }) =>
+    client.post('/api/driver/register', data),
+
+  // POST ${AUTH_ROUTE_PREFIX}/login
   login: (data: { email?: string; phone?: string; password: string }) =>
-    client.post('/auth/login', data),
-
-  // POST /auth/verify-otp
-  verifyOtp: (data: { phone: string; otp: string }) =>
-    client.post('/auth/verify-otp', data),
-
-  // POST /auth/refresh
+    client.post(`${AUTH_ROUTE_PREFIX}/login`, data),
+ 
+  // POST ${AUTH_ROUTE_PREFIX}/refresh
   refreshToken: (refresh_token: string) =>
-    client.post('/auth/refresh', { refresh_token }),
+    client.post(`${AUTH_ROUTE_PREFIX}/refresh`, { refresh_token }),
 
-  // GET /auth/me
+  // GET ${AUTH_ROUTE_PREFIX}/me
   me: () =>
-    client.get('/auth/me'),
+    client.get(`${AUTH_ROUTE_PREFIX}/me`),
 
-  // POST /auth/logout
+  // POST ${AUTH_ROUTE_PREFIX}/logout
   logout: () =>
-    client.post('/auth/logout'),
+    client.post(`${AUTH_ROUTE_PREFIX}/logout`, { refresh_token: tokenStorage.getRefresh() ?? '' }),
 };

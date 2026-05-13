@@ -1,19 +1,22 @@
 import { client } from './client';
 
+const API_PREFIX = '/api';
+const MATCHING_PREFIX = `${API_PREFIX}/matching`;
+
 export const matchingApi = {
-  // POST /matching/find — calls Workflow A for AI-ranked driver list
+  // POST /api/matching/find — triggers driver matching for a ride
   find: (ride_id: string) =>
-    client.post('/matching/find', { ride_id }),
+    client.post(`${MATCHING_PREFIX}/find`, { ride_id }),
 
-  // POST /matching/accept
+  // POST /api/matching/accept
   accept: (ride_id: string, driver_id: string) =>
-    client.post('/matching/accept', { ride_id, driver_id }),
+    client.post(`${MATCHING_PREFIX}/accept`, { ride_id, driver_id }),
 
-  // POST /matching/reject — re-triggers Workflow A with updated driver pool
+  // POST /api/matching/reject — retries matching with the next driver
   reject: (ride_id: string, driver_id: string) =>
-    client.post('/matching/reject', { ride_id, driver_id }),
+    client.post(`${MATCHING_PREFIX}/reject`, { ride_id, driver_id }),
 
-  // GET /matching/status/{ride_id} — polling fallback
+  // GET /api/matching/status/{ride_id} — polling fallback
   status: (ride_id: string) =>
-    client.get(`/matching/status/${ride_id}`),
+    client.get(`${MATCHING_PREFIX}/status/${ride_id}`),
 };
