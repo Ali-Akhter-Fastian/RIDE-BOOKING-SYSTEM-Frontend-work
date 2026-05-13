@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { MapPin } from 'lucide-react';
 
 export function MapView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, ReactNode, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, ReactNode } from 'react';
 import { createRiderSocket } from '../services/websocket/riderSocket';
 import { createDriverSocket } from '../services/websocket/driverSocket';
 
@@ -10,41 +10,26 @@ type SocketContextValue = {
 const SocketContext = createContext<SocketContextValue>({ riderSocket: null, driverSocket: null });
 
 export function SocketProvider({ userId, driverId, children }: { userId?: string; driverId?: string; children: ReactNode }) {
-  const [riderSocket, setRiderSocket] = useState<ReturnType<typeof createRiderSocket> | null>(null);
-  const [driverSocket, setDriverSocket] = useState<ReturnType<typeof createDriverSocket> | null>(null);
+  const riderRef = useRef<ReturnType<typeof createRiderSocket> | null>(null);
+  const driverRef = useRef<ReturnType<typeof createDriverSocket> | null>(null);
 
   useEffect(() => {
-    let mounted = true;
     if (userId) {
-      const ws = createRiderSocket(userId);
-      ws.connect();
-      if (mounted) setRiderSocket(ws);
+      riderRef.current = createRiderSocket(userId);
+      riderRef.current.connect();
     }
-    return () => {
-      mounted = false;
-      riderSocket?.disconnect();
-      setRiderSocket(null);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
-
-  useEffect(() => {
-    let mounted = true;
     if (driverId) {
-      const ws = createDriverSocket(driverId);
-      ws.connect();
-      if (mounted) setDriverSocket(ws);
+      driverRef.current = createDriverSocket(driverId);
+      driverRef.current.connect();
     }
     return () => {
-      mounted = false;
-      driverSocket?.disconnect();
-      setDriverSocket(null);
+      riderRef.current?.disconnect();
+      driverRef.current?.disconnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [driverId]);
+  }, [userId, driverId]);
 
   return (
-    <SocketContext.Provider value={{ riderSocket, driverSocket }}>
+    <SocketContext.Provider value={{ riderSocket: riderRef.current, driverSocket: driverRef.current }}>
       {children}
     </SocketContext.Provider>
   );

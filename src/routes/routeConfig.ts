@@ -1,12 +1,8 @@
 import { ROLES } from '../constants/roles';
-const API_PREFIX = '/api';
-const AUTH_PREFIX = `${API_PREFIX}/auth`;
 
 export const ROUTES = {
-  LOGIN:          `${AUTH_PREFIX}/login`,
-  REGISTER:       `${AUTH_PREFIX}/register`,
-  PROFILE:        '/profile',
-  APP_HOME:       '/app',
+  LOGIN:          '/login',
+  REGISTER:       '/register',
 
   // Rider
   RIDER_HOME:     '/rider',

@@ -2,8 +2,7 @@ import { useEffect, useRef } from 'react';
 import { driverApi } from '../api/driverApi';
 import { useGeolocation } from './useGeolocation';
 
-// Keeps the latest browser location in memory while the driver is online.
-// The actual save to the backend happens once from the online toggle handler.
+// Continuously pings PUT /drivers/location every 5s while driver is online
 export function useDriverLocation(isOnline: boolean) {
   const { coords, error } = useGeolocation(true); // watch mode
   const coordsRef = useRef(coords);
@@ -11,12 +10,11 @@ export function useDriverLocation(isOnline: boolean) {
 
   useEffect(() => {
     if (!isOnline) return;
-
-    // No backend writes here; just keep the latest coords available to the UI.
-    const c = coordsRef.current;
-    if (c) {
-      coordsRef.current = c;
-    }
+    const interval = setInterval(() => {
+      const c = coordsRef.current;
+      if (c) driverApi.updateLocation(c.lat, c.lng).catch(() => {});
+    }, 5000);
+    return () => clearInterval(interval);
   }, [isOnline]);
 
   return { coords, error };

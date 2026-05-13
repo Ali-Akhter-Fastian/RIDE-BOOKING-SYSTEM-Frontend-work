@@ -1,39 +1,27 @@
 import { client } from './client';
 
-const DRIVER_PREFIX = '/api/driver';
-
 export const driverApi = {
   // POST /drivers/register
   register: (data: { vehicle: object; license_number: string; documents: object }) =>
-    client.post(`${DRIVER_PREFIX}/register`, data),
+    client.post('/drivers/register', data),
 
   // GET /drivers/{id}
   getById: (id: string) =>
-    client.get(`${DRIVER_PREFIX}/${id}`),
+    client.get(`/drivers/${id}`),
 
   // PUT /drivers/{id}/status
   setStatus: (id: string, status: 'online' | 'offline' | 'busy') =>
-    client.put(`${DRIVER_PREFIX}/${id}/status`, { status }),
+    client.put(`/drivers/${id}/status`, { status }),
 
-  // PATCH /api/driver/status — set driver availability (online/offline)
-  setAvailability: (is_available: boolean) =>
-    client.patch(`${DRIVER_PREFIX}/status`, { is_available }),
-
-  // DELETE /api/driver/locations — clear stored driver locations
-  deleteLocations: () => client.delete(`${DRIVER_PREFIX}/locations`),
-
-  // POST /api/driver/save-location — stores current driver coordinates
+  // PUT /drivers/location — GPS ping every ~5s; feeds Workflow A driver pool
   updateLocation: (lat: number, lng: number) =>
-    client.post(`${DRIVER_PREFIX}/save-location`, { latitude: lat, longitude: lng }),
+    client.put('/drivers/location', { lat, lng }),
 
   // GET /drivers/nearby — input for Workflow A ranking payload
   nearby: (lat: number, lng: number, radius_km = 5) =>
-    client.get(`${DRIVER_PREFIX}/nearby`, { params: { lat, lng, radius_km } }),
+    client.get('/drivers/nearby', { params: { lat, lng, radius_km } }),
 
   // GET /drivers/{id}/earnings
   earnings: (id: string, params?: { from?: string; to?: string }) =>
-    client.get(`${DRIVER_PREFIX}/${id}/earnings`, { params }),
-
-  // GET /api/driver/active-request
-  activeRequest: () => client.get(`${DRIVER_PREFIX}/active-request`),
+    client.get(`/drivers/${id}/earnings`, { params }),
 };
