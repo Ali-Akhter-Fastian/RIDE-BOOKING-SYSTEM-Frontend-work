@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Gauge, User, MapPin, Search, Mic, Home, Briefcase, Clock, Users, Star, History, Navigation } from 'lucide-react';
+import { Gauge, User, MapPin, Search, Mic, Home, Briefcase, Clock, Users, Star, History, Navigation, X, CreditCard } from 'lucide-react';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L, { type LeafletMouseEvent } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -218,7 +218,7 @@ export function RiderPortal() {
             selectedRide={selectedRide}
             setSelectedRide={setSelectedRide}
             setScreen={setScreen}
-            onConfirmRide={async () => {
+            onConfirmRide={async (estimatedFare?: number | null) => {
               try {
                 if (!pickupCoords) {
                   alert('Please enable geolocation or select a pickup location');
@@ -230,6 +230,7 @@ export function RiderPortal() {
                   ride_type: selectedRide ?? 'ridex',
                   pickup_latitude: pickupCoords.lat,
                   pickup_longitude: pickupCoords.lng,
+                  estimated_fare: estimatedFare ?? undefined,
                 });
                 // store ride id so downstream screens can call APIs
                 if (res && (res as any).id) {
@@ -634,7 +635,7 @@ function HomeScreen({
               {selectedRide && (
                 <button
                   onClick={async () => {
-                    await onConfirmRide();
+                    await onConfirmRide(fareEstimate?.total ?? null);
                   }}
                   disabled={loading || !pickupCoords || !destinationCoords}
                   className="w-full bg-[#F5A623] hover:bg-[#F5A623]/90 disabled:opacity-60 disabled:cursor-not-allowed text-[#0A0C10] py-4 rounded-lg font-medium transition-all"
