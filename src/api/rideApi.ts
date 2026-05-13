@@ -1,27 +1,51 @@
 import { client } from './client';
-
+import { matchingApi } from './matchingApi';
+const API_PREFIX = '/api';
+const RIDE_PREFIX = `${API_PREFIX}/rides`;
 export const rideApi = {
-  // POST /rides/request — triggers Workflow A (Driver Ranking) + B (Fare Prediction)
-  request: (data: { pickup: { lat: number; lng: number }; dropoff: { lat: number; lng: number }; ride_type: string }) =>
-    client.post('/rides/request', data),
+  // POST /api/rides/create
+  create: (data: { origin: string; destination: string; ride_type?: string; pickup_latitude?: number; pickup_longitude?: number; estimated_fare?: number }) =>
+    client.post(`${RIDE_PREFIX}/create`, data),
+
+  // Backward-compatible alias for existing callers
+  request: (data: { origin: string; destination: string; ride_type?: string; pickup_latitude?: number; pickup_longitude?: number; estimated_fare?: number }) =>
+    client.post(`${RIDE_PREFIX}/create`, data),
+
+  // Trigger driver assignment immediately after a ride is created.
+  findMatch: (rideId: string) => matchingApi.find(rideId),
 
   // GET /rides/{id}
   getById: (id: string) =>
-    client.get(`/rides/${id}`),
+    client.get(`${RIDE_PREFIX}/${id}`),
 
-  // PUT /rides/{id}/cancel
+  // POST /rides/{id}/cancel
   cancel: (id: string) =>
-    client.put(`/rides/${id}/cancel`),
+    client.post(`${RIDE_PREFIX}/${id}/cancel`),
 
-  // PUT /rides/{id}/status — "completed" triggers Workflow C (Notifications)
+  // PATCH /rides/{id}/accept|start|complete
   updateStatus: (id: string, status: string) =>
-    client.put(`/rides/${id}/status`, { status }),
+    status === 'accepted'
+      ? client.patch(`${RIDE_PREFIX}/${id}/accept`)
+      : status === 'in_progress'
+        ? client.patch(`${RIDE_PREFIX}/${id}/start`)
+        : status === 'completed'
+          ? client.patch(`${RIDE_PREFIX}/${id}/complete`)
+          : Promise.reject(new Error(`Unsupported ride status: ${status}`)),
 
-  // POST /rides/{id}/rate
+  accept: (id: string) =>
+    client.patch(`${RIDE_PREFIX}/${id}/accept`),
+
+  start: (id: string) =>
+    client.patch(`${RIDE_PREFIX}/${id}/start`),
+
+  complete: (id: string) =>
+    client.patch(`${RIDE_PREFIX}/${id}/complete`),
+
+  // POST /rides/{id}/rating
   rate: (id: string, data: { rating: number; comment?: string }) =>
-    client.post(`/rides/${id}/rate`, data),
+    client.post(`${RIDE_PREFIX}/${id}/rating`, { rating: data.rating }),
 
-  // GET /rides/history
-  history: (params?: { page?: number; limit?: number }) =>
-    client.get('/rides/history', { params }),
+  // GET /rides/history?page=1&page_size=20
+  history: (params?: { page?: number; page_size?: number }) =>
+    client.get(`${RIDE_PREFIX}/history`, { params }),
 };

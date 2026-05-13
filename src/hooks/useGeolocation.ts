@@ -12,7 +12,11 @@ export function useGeolocation(watch = false) {
       setError('Geolocation not supported');
       return;
     }
-    const opts: PositionOptions = { enableHighAccuracy: true, timeout: 10000 };
+    const opts: PositionOptions = {
+      enableHighAccuracy: false,
+      timeout: 30000,
+      maximumAge: 60000,
+    };
     const success = (pos: GeolocationPosition) =>
       setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
     const fail = (err: GeolocationPositionError) => setError(err.message);

@@ -6,11 +6,11 @@ export function useRide() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const requestRide = useCallback(async (payload: { pickup: { lat: number; lng: number }; dropoff: { lat: number; lng: number }; ride_type: string }) => {
+  const requestRide = useCallback(async (payload: { origin: string; destination: string; ride_type?: string; pickup_latitude?: number; pickup_longitude?: number; estimated_fare?: number }) => {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await rideApi.request(payload);
+      const { data } = await rideApi.create(payload);
       setRide(data);
       return data;
     } catch (e: any) {
@@ -27,7 +27,20 @@ export function useRide() {
   }, []);
 
   const updateStatus = useCallback(async (id: string, status: string) => {
-    const { data } = await rideApi.updateStatus(id, status);
+    const method =
+      status === 'accepted'
+        ? rideApi.accept
+        : status === 'in_progress'
+          ? rideApi.start
+          : status === 'completed'
+            ? rideApi.complete
+            : null;
+
+    if (!method) {
+      throw new Error(`Unsupported ride status: ${status}`);
+    }
+
+    const { data } = await method(id);
     setRide(data);
     return data;
   }, []);
