@@ -336,6 +336,7 @@ function HomeScreen({
   const [isEstimating, setIsEstimating] = useState(false);
   const [estimateError, setEstimateError] = useState<string | null>(null);
   const [fareEstimate, setFareEstimate] = useState<FareEstimate | null>(null);
+  const [estimatedPrices, setEstimatedPrices] = useState<Record<string, number>>({});
   const [webhookUrl, setWebhookUrl] = useState(DEFAULT_FARE_WEBHOOK_URL);
 
   useEffect(() => {
@@ -348,6 +349,15 @@ function HomeScreen({
   useEffect(() => {
     window.localStorage.setItem('rider_pricing_webhook_url', webhookUrl.trim());
   }, [webhookUrl]);
+
+  // Update fare estimate when selected ride changes
+  useEffect(() => {
+    if (fareEstimate && selectedRide && estimatedPrices[selectedRide]) {
+      setFareEstimate((prev) => 
+        prev ? { ...prev, total: estimatedPrices[selectedRide] } : prev
+      );
+    }
+  }, [selectedRide, estimatedPrices]);
   
   const handleUseCurrentLocation = async () => {
     try {
@@ -423,25 +433,49 @@ function HomeScreen({
       return;
     }
 
-    const payload = {
-      pickup: pickupCoords,
-      destination: destinationCoords,
-      vehicle_type: rideTypeToVehicle(selectedRide),
-      webhook_url: webhookUrl.trim() || undefined,
-    };
-
     setIsEstimating(true);
     try {
-      const { data } = await client.post('/api/webhooks/fare-estimate', payload);
-      setFareEstimate(normalizeFarePayload(data, pickupCoords, destinationCoords, selectedRide));
+      // Estimate prices for all ride types
+      const prices: Record<string, number> = {};
+      const rideTypes = ['ridex', 'ridexl', 'comfort'];
+      
+      for (const rideType of rideTypes) {
+        const payload = {
+          pickup: pickupCoords,
+          destination: destinationCoords,
+          vehicle_type: rideTypeToVehicle(rideType),
+          webhook_url: webhookUrl.trim() || undefined,
+        };
+
+        try {
+          const { data } = await client.post('/api/webhooks/fare-estimate', payload);
+          const estimate = normalizeFarePayload(data, pickupCoords, destinationCoords, rideType);
+          prices[rideType] = estimate.total;
+        } catch {
+          // Fallback to local estimate for this ride type
+          const fallback = buildLocalEstimate(pickupCoords, destinationCoords, rideType);
+          prices[rideType] = fallback.total;
+        }
+      }
+
+      setEstimatedPrices(prices);
+      // Set the main estimate for the selected ride (or first one)
+      const selectedRideType = selectedRide || 'ridex';
+      const selectedEstimate =
+        selectedRide && prices[selectedRide]
+          ? buildLocalEstimate(pickupCoords, destinationCoords, selectedRide)
+          : buildLocalEstimate(pickupCoords, destinationCoords, selectedRideType);
+      
+      if (prices[selectedRideType]) {
+        selectedEstimate.total = prices[selectedRideType];
+      }
+      setFareEstimate(selectedEstimate);
     } catch (e: any) {
-      const fallback = buildLocalEstimate(pickupCoords, destinationCoords, selectedRide);
-      setFareEstimate(fallback);
       const message = e?.response?.data?.detail;
       setEstimateError(
         typeof message === 'string'
-          ? `${message} Showing local estimate fallback.`
-          : 'Pricing workflow unavailable. Showing local estimate fallback.',
+          ? `${message} Unable to estimate fares.`
+          : 'Pricing workflow unavailable. Please try again.',
       );
     } finally {
       setIsEstimating(false);
@@ -586,8 +620,21 @@ function HomeScreen({
                         <span className="flex items-center gap-1"><Users className="w-3 h-3" />{option.seats}</span>
                       </div>
                     </div>
-                    <div className="text-lg font-medium text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>
-                      ${option.price.toFixed(2)}
+                    <div className="text-right">
+                      {estimatedPrices[option.id] ? (
+                        <>
+                          <div className="text-lg font-medium text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>
+                            PKR {estimatedPrices[option.id]}
+                          </div>
+                          <div className="text-xs text-[#64748B] mt-1">
+                            ~{Math.round((estimatedPrices[option.id] / 122))} USD
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-lg font-medium text-[#F5A623]" style={{ fontFamily: 'var(--font-mono)' }}>
+                          ${option.price.toFixed(2)}
+                        </div>
+                      )}
                     </div>
                   </button>
                 ))}
@@ -624,7 +671,9 @@ function HomeScreen({
                 <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
                   <div className="flex items-center justify-between">
                     <div className="text-sm text-emerald-200">Estimated Fare</div>
-                    <div className="text-xl font-bold text-emerald-200">PKR {fareEstimate.total}</div>
+                    <div className="text-xl font-bold text-emerald-200">
+                      PKR {estimatedPrices[selectedRide || 'ridex'] || fareEstimate.total}
+                    </div>
                   </div>
                   <div className="mt-2 text-xs text-emerald-100/90">
                     Base PKR {fareEstimate.baseFare} • Source: {fareEstimate.source === 'n8n' ? 'n8n workflow' : 'local fallback'}
@@ -635,13 +684,15 @@ function HomeScreen({
               {selectedRide && (
                 <button
                   onClick={async () => {
-                    await onConfirmRide(fareEstimate?.total ?? null);
+                    await onConfirmRide(estimatedPrices[selectedRide] || fareEstimate?.total || null);
                   }}
                   disabled={loading || !pickupCoords || !destinationCoords}
                   className="w-full bg-[#F5A623] hover:bg-[#F5A623]/90 disabled:opacity-60 disabled:cursor-not-allowed text-[#0A0C10] py-4 rounded-lg font-medium transition-all"
                 >
                   {loading
                     ? 'Requesting ride...'
+                    : estimatedPrices[selectedRide]
+                    ? `Request ${selectedOption?.name} • PKR ${estimatedPrices[selectedRide]}`
                     : `Request ${selectedOption?.name} ${fareEstimate ? `• PKR ${fareEstimate.total}` : ''}`}
                 </button>
               )}
